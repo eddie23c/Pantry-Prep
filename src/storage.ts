@@ -2,6 +2,7 @@
 // Backup and restore use a JSON file the person keeps themselves.
 import type { AppState, StoreItem } from "./calc";
 import { CAT, EXAMPLE, GROUPS, type GroupId } from "./data";
+import { isIsoDate } from "./dates";
 
 const KEY = "pantry-prep-v1";
 export const BACKUP_FORMAT = "pantry-prep-backup";
@@ -56,6 +57,7 @@ export function sanitise(raw: unknown): AppState | null {
       portions: clamp(it.portions, 0, 100, 0),
       litres: clamp(it.litres, 0, 50, 0),
       count: Math.round(clamp(it.count, 1, 999, 1)),
+      ...(isIsoDate(it.bb) ? { bb: it.bb } : {}),
     }];
   });
   const kit: AppState["kit"] = {};
@@ -75,6 +77,7 @@ export function sanitise(raw: unknown): AppState | null {
     items,
     picked: Array.isArray(s.picked) ? s.picked.filter((x: unknown) => typeof x === "string").slice(0, 100) : [],
     kit,
+    ...(isIsoDate(s.kitChecked) ? { kitChecked: s.kitChecked } : {}),
   };
 }
 

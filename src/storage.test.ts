@@ -22,3 +22,12 @@ describe("sanitise", () => {
     expect(s.items[0].group).toBe("other");
   });
 });
+
+describe("dates in storage", () => {
+  it("keeps valid best-before and kit-check dates and drops bad ones", () => {
+    const s = sanitise({ house: {}, kitChecked: "2026-11-01", items: [{ name: "A", bb: "2027-01-31" }, { name: "B", bb: "2027-02-31" }, { name: "C", bb: "soon" }] })!;
+    expect(s.kitChecked).toBe("2026-11-01");
+    expect(s.items.map((i) => i.bb)).toEqual(["2027-01-31", undefined, undefined]);
+    expect(sanitise({ house: {}, items: [], kitChecked: "x" })!.kitChecked).toBeUndefined();
+  });
+});

@@ -5,13 +5,14 @@ import "./styles.css";
 import * as C from "./calc";
 import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from "./data";
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
+import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDue, todayIso } from "./dates";
 
 // ---------- Colours and labels per group ----------
 var GCOL = { water: "var(--water)", fruitveg: "var(--fibre)", starchy: "var(--warn)", protein: "var(--protein)", dairy: "var(--water)", oils: "var(--energy)", other: "var(--muted)" };
 var GSHORT = { water: "H₂O", fruitveg: "FV", starchy: "SC", protein: "PR", dairy: "DA", oils: "OI", other: "EX" };
 
 function addItem(item) {
-  var ex = item.cat && state.items.find(function (x) { return x.cat === item.cat && x.name === item.name; });
+  var ex = item.cat && state.items.find(function (x) { return x.cat === item.cat && x.name === item.name && (x.bb || "") === (item.bb || ""); });
   if (ex) ex.count += item.count; else state.items.push(item);
 }
 
@@ -100,6 +101,7 @@ function renderHome() {
       return '<div class="bar-row"><div class="bar-top"><b>' + esc(GROUPS[g].label) + '</b><span class="num muted">' + fmt(have) + " / " + fmt(need) + ' portions</span></div><div class="bar"><i style="width:' + Math.min(100, p * 100).toFixed(1) + "%;background:" + GCOL[g] + '"></i></div></div>';
     }).join("") + "</div></div>";
 
+  html += useSoonCard();
   var shop = shoppingList();
   html += '<div class="card"><div class="card-head"><h2>Top up</h2><span class="small muted">' + (shop.length ? "Tap + when bought" : "") + '</span></div><div class="rows">' +
     (shop.length ? shop.map(function (s) {
@@ -111,7 +113,7 @@ function renderHome() {
 
   var kitDone = KIT.filter(function (k) { return kitState(k); }).length;
   html += '<div class="card"><div class="card-head"><h2>Emergency kit</h2><button class="link-btn" data-go="prepare">Open checklist</button></div>' +
-    '<div class="bar-row"><div class="bar-top"><b>' + kitDone + " of " + KIT.length + ' Be Ready items</b><span class="muted small">' + (kitDone === KIT.length ? "Complete" : "Photograph your kit to tick items off") + '</span></div><div class="bar"><i style="width:' + (kitDone / KIT.length * 100).toFixed(1) + '%;background:var(--brand)"></i></div></div></div>';
+    '<div class="bar-row"><div class="bar-top"><b>' + kitDone + " of " + KIT.length + ' Be Ready items</b><span class="muted small">' + (kitCheckDue(state.kitChecked, todayIso()) ? (state.kitChecked ? "Due a check" : "Not checked yet") : kitDone === KIT.length ? "Complete" : "Checked " + formatDate(state.kitChecked)) + '</span></div><div class="bar"><i style="width:' + (kitDone / KIT.length * 100).toFixed(1) + '%;background:var(--brand)"></i></div></div></div>';
   var ready = sortedRecipes().filter(function (x) { return x.s.ready; });
   html += '<div class="card"><div class="card-head"><h2>Cook from your store</h2><button class="link-btn" data-go="recipes">See all</button></div>' +
     (ready.length ? '<div class="carousel">' + ready.map(recipeCard).join("") + "</div>" : '<p class="empty-line">Add a few more basics and recipes will appear here.</p>') + "</div>";
@@ -134,7 +136,7 @@ function renderStore() {
     list.forEach(function (it) {
       var right = g === "water" ? fmt(it.litres * it.count) + " L" : fmt(it.kcal * it.count) + " kcal";
       html += '<div class="row-item" data-uid="' + esc(it.uid) + '"><div class="dot" style="background:color-mix(in srgb,' + GCOL[g] + ' 15%,transparent);color:' + GCOL[g] + '">' + GSHORT[g] + '</div>' +
-        '<div class="row-main"><span class="t">' + esc(it.name) + (it.cat ? "" : '<span class="tag">estimate</span>') + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></div>' +
+        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '" aria-label="' + esc(it.name) + ', details and best-before date"><span class="t">' + esc(it.name) + (it.cat ? "" : '<span class="tag">estimate</span>') + bbTag(it) + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></button>' +
         '<div class="stepper"><button data-step="-1" aria-label="One fewer ' + esc(it.name) + '">−</button><span class="num">' + esc(it.count) + '</span><button data-step="1" aria-label="One more ' + esc(it.name) + '">+</button></div></div>';
     });
     html += '</div><div class="section-foot"><button class="link-btn" data-addgroup="' + g + '">+ Add ' + esc(GROUPS[g].label.toLowerCase()) + "</button></div></div>";
@@ -173,7 +175,7 @@ function renderPrepare() {
     KIT.map(function (k) {
       var st = kitState(k), tag = st === "auto" ? '<span class="tag">From your store</span>' : st === "photo" ? '<span class="tag tag-photo">Seen in photo</span>' : "";
       return '<li><label for="kit-' + k.id + '"><input type="checkbox" id="kit-' + k.id + '" data-kit="' + k.id + '"' + (st ? " checked" : "") + (k.auto ? " disabled" : "") + '><span>' + esc(k.label) + tag + "</span></label></li>";
-    }).join("") + '</ul><button class="btn block" data-scan-kit="1">Scan my kit with the camera</button></div>';
+    }).join("") + '</ul>' + kitCheckRow() + '<button class="btn block" data-scan-kit="1">Scan my kit with the camera</button></div>';
   html += '<div class="card"><div class="card-head"><h2>Back up your store</h2></div>' +
     '<p class="small muted">Your store is kept only on this device. Save a backup file now and then, so you can restore it on a new phone.</p>' +
     '<button class="btn block" id="backup-btn">Save a backup file</button>' +
@@ -187,7 +189,7 @@ function renderPrepare() {
 }
 
 function renderAll() { renderTop(); renderHome(); renderStore(); renderRecipes(); renderPrepare(); }
-function changed() { save(); renderAll(); if (sheetKind === "recipe" && sheetArg) openRecipe(sheetArg, true); }
+function changed() { save(); renderAll(); if (sheetKind === "recipe" && sheetArg) openRecipe(sheetArg, true); if (sheetKind === "item" && sheetArg) openItem(sheetArg, true); }
 
 function go(name) {
   ui.screen = name;
@@ -268,6 +270,45 @@ function openAbout() {
     "<p><b>Food</b> targets are approximate UK reference intakes for a short emergency: 2,000 kcal, 50 g protein and 30 g fibre per adult per day, and about 1,400 kcal, 30 g protein and 20 g fibre per child.</p>" +
     "<p><b>Balanced plate</b> follows the Eatwell Guide groups: 5 portions of fruit and veg, 3 of starchy carbs, 2 of protein and 2 of dairy per person per day.</p>" +
     '<p class="small muted num">Your household needs ' + fmt(tg.water) + " L water and " + fmt(tg.kcal) + " kcal in total. Nutrition per pack is a typical label figure, and scanned items are estimates.</p></div>";
+}
+
+// ---------- Best-before dates ----------
+function bbTag(it) {
+  var st = expiryStatus(it.bb, todayIso());
+  if (!st || st === "ok") return "";
+  return '<span class="tag tag-' + st + '">' + (st === "expired" ? "Past date" : "Use soon") + "</span>";
+}
+function useSoonCard() {
+  var e = expiring(state.items, todayIso()), list = e.expired.concat(e.soon);
+  if (!list.length) return "";
+  return '<div class="card"><div class="card-head"><h2>Eat and replace</h2><span class="status-chip st-' + (e.expired.length ? "bad" : "warn") + '">' + plural(list.length, "item", "items") + '</span></div>' +
+    '<p class="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up.</p><div class="rows">' +
+    list.slice(0, 5).map(function (it) {
+      var st = expiryStatus(it.bb, todayIso());
+      return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,var(--' + (st === "expired" ? "bad" : "warn") + ') 15%,transparent);color:var(--' + (st === "expired" ? "bad" : "warn") + ')" aria-hidden="true">!</div>' +
+        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '"><span class="t">' + esc(it.name) + '</span><span class="s">' + esc(expiryPhrase(it.bb, todayIso())) + "</span></button><span></span></div>";
+    }).join("") + (list.length > 5 ? '<p class="empty-line">And ' + (list.length - 5) + ' more in your store.</p>' : "") + "</div></div>";
+}
+function openItem(id, refresh) {
+  var it = state.items.find(function (x) { return x.uid === id; });
+  if (!it) { if (refresh) closeSheet(); return; }
+  if (!refresh) openSheet(it.name, "item", id);
+  var right = it.group === "water" ? fmt(it.litres * it.count) + " L" : fmt(it.kcal * it.count) + " kcal";
+  $("sheet-body").innerHTML =
+    '<div class="card" data-uid="' + esc(it.uid) + '"><div class="set-row"><div class="row-main"><span class="t">How many</span><span class="s num">' + esc(it.pack || "Pack") + " · " + right + " in total</span></div>" +
+    '<div class="stepper"><button data-step="-1" aria-label="One fewer">−</button><span class="num">' + esc(it.count) + '</span><button data-step="1" aria-label="One more">+</button></div></div>' +
+    '<label class="field" for="bb-input"><span class="t">Best-before date</span><span class="s">Use the earliest date if your packs differ. We remind you ' + 30 + ' days ahead.</span>' +
+    '<input type="date" id="bb-input" data-bb="' + esc(it.uid) + '" value="' + esc(it.bb || "") + '"></label>' +
+    (it.bb ? '<p class="small ' + (expiryStatus(it.bb, todayIso()) === "ok" ? "muted" : "warn-text") + '">' + esc(expiryPhrase(it.bb, todayIso())) + "</p>" : "") +
+    "</div>" +
+    '<div class="card"><p class="small muted num">Per pack: ' + (it.group === "water" ? fmt(it.litres) + " L water" : fmt(it.kcal) + " kcal, " + fmt(it.protein) + " g protein, " + fmt(it.fibre) + " g fibre") + "." + (it.cat ? " Typical UK label figure." : " Estimated, so check the pack.") + "</p></div>" +
+    '<button class="btn danger block" data-remove-item="' + esc(it.uid) + '">Remove from store</button>';
+}
+function kitCheckRow() {
+  var due = kitCheckDue(state.kitChecked, todayIso());
+  return '<div class="kit-check' + (due ? " due" : "") + '"><div class="row-main"><span class="t">' + (state.kitChecked ? "Last checked " + esc(formatDate(state.kitChecked)) : "Not checked yet") + '</span>' +
+    '<span class="s">' + (due ? "Look through your kit every 3 months: test torches and radios, swap old batteries and medicines." : "Next check due in about 3 months.") + "</span></div>" +
+    '<button class="btn' + (due ? " primary" : "") + '" id="kit-checked-btn">I checked it today</button></div>';
 }
 
 // ---------- Photo scan ----------
@@ -357,7 +398,7 @@ function buildPrintFile() {
   var p = pickedRecipes(), t = totals(), tg = targets(), pages = [];
   var today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   for (var i = 0; i < p.length; i += 4) pages.push(p.slice(i, i + 4));
-  var rows = state.items.map(function (it) { return "<tr><td>" + esc(it.name) + "</td><td>" + esc(it.pack || "") + "</td><td>" + esc(it.count) + "</td><td>&nbsp;</td></tr>"; }).join("");
+  var rows = state.items.map(function (it) { return "<tr><td>" + esc(it.name) + "</td><td>" + esc(it.pack || "") + "</td><td>" + esc(it.count) + "</td><td>" + (it.bb ? esc(formatDate(it.bb)) : "&nbsp;") + "</td></tr>"; }).join("");
   return '<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>Pantry Prep cards</title><style>' +
     "@page{size:A4;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10.5pt}" +
     ".sheet{width:190mm;height:277mm;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6mm;break-after:page;page-break-after:always}" +
@@ -413,6 +454,9 @@ document.addEventListener("click", function (e) {
   if (el.id === "house-btn") { go("prepare"); return; }
   if (d.sheet === "about") { openAbout(); return; }
   if (d.recipe) { openRecipe(d.recipe); return; }
+  if (d.item) { openItem(d.item); return; }
+  if (d.removeItem) { var gone = state.items.find(function (x) { return x.uid === d.removeItem; }); state.items = state.items.filter(function (x) { return x.uid !== d.removeItem; }); closeSheet(); changed(); if (gone) toast("Removed " + gone.name); return; }
+  if (el.id === "kit-checked-btn") { state.kitChecked = todayIso(); changed(); toast("Kit check saved"); var kb = $("kit-checked-btn"); if (kb) kb.focus(); return; }
   if (d.togglePick) {
     var id = d.togglePick, on = state.picked.indexOf(id) >= 0;
     state.picked = state.picked.filter(function (x) { return x !== id; }); if (!on) state.picked.push(id);
@@ -486,6 +530,11 @@ document.addEventListener("change", function (e) {
       state = restored; changed(); toast("Store restored from backup");
     });
     return;
+  }
+  if (t.dataset.bb) {
+    var bit = state.items.find(function (x) { return x.uid === t.dataset.bb; }); if (!bit) return;
+    if (isIsoDate(t.value)) bit.bb = t.value; else delete bit.bb;
+    changed(); var bi = $("bb-input"); if (bi) bi.focus(); return;
   }
   if (t.dataset.kit != null) { if (t.checked) state.kit[t.dataset.kit] = "hand"; else delete state.kit[t.dataset.kit]; save(); renderPrepare(); var again = $("kit-" + t.dataset.kit); if (again) again.focus(); }
 });

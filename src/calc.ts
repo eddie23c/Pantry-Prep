@@ -23,6 +23,8 @@ export interface StoreItem {
   portions: number;
   litres: number;
   count: number;
+  /** Best-before date as "YYYY-MM-DD", if the person entered one. */
+  bb?: string;
 }
 
 export interface AppState {
@@ -32,6 +34,8 @@ export interface AppState {
   picked: string[];
   /** Kit items ticked by hand ("hand") or seen in a photo ("photo"). */
   kit: Record<string, "hand" | "photo">;
+  /** When the person last confirmed their kit, as "YYYY-MM-DD". */
+  kitChecked?: string;
 }
 
 // Per person per day. Water is the UK Government Be Ready figure for drinking.
