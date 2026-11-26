@@ -31,3 +31,15 @@ describe("dates in storage", () => {
     expect(sanitise({ house: {}, items: [], kitChecked: "x" })!.kitChecked).toBeUndefined();
   });
 });
+
+describe("allergies and onboarding", () => {
+  it("keeps known allergens and diets only", () => {
+    const s = sanitise({ house: {}, items: [], allergies: ["milk", "milk", "bogus", 3], diet: "keto" })!;
+    expect(s.allergies).toEqual(["milk"]);
+    expect(s.diet).toBe("none");
+  });
+  it("treats older saved stores as already onboarded", () => {
+    expect(sanitise({ house: {}, items: [] })!.onboarded).toBe(true);
+    expect(sanitise({ house: {}, items: [], onboarded: false })!.onboarded).toBe(false);
+  });
+});

@@ -4,7 +4,7 @@ import { KIT, RECIPES } from "./data";
 import { fromCat } from "./storage";
 
 const house = { adults: 2, children: 1, pets: 0, days: 3 };
-const state = (items: AppState["items"], extra: Partial<AppState> = {}): AppState => ({ house, example: false, items, picked: [], kit: {}, ...extra });
+const state = (items: AppState["items"], extra: Partial<AppState> = {}): AppState => ({ house, example: false, items, picked: [], kit: {}, allergies: [], diet: "none", onboarded: true, ...extra });
 
 describe("targets", () => {
   it("uses 3 L of drinking water per person per day", () => {

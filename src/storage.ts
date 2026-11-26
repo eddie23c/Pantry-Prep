@@ -3,6 +3,7 @@
 import type { AppState, StoreItem } from "./calc";
 import { CAT, EXAMPLE, GROUPS, type GroupId } from "./data";
 import { isIsoDate } from "./dates";
+import { ALLERGENS, DIETS, type AllergenId, type Diet } from "./allergens";
 
 const KEY = "pantry-prep-v1";
 export const BACKUP_FORMAT = "pantry-prep-backup";
@@ -28,6 +29,9 @@ export function defaultState(): AppState {
     items: EXAMPLE.map(([id, n]) => fromCat(id, n)),
     picked: ["r1", "r4", "r9"],
     kit: {},
+    allergies: [],
+    diet: "none",
+    onboarded: false,
   };
 }
 
@@ -78,6 +82,10 @@ export function sanitise(raw: unknown): AppState | null {
     items,
     picked: Array.isArray(s.picked) ? s.picked.filter((x: unknown) => typeof x === "string").slice(0, 100) : [],
     kit,
+    allergies: Array.isArray(s.allergies) ? [...new Set(s.allergies.filter((a: unknown): a is AllergenId => typeof a === "string" && a in ALLERGENS))] as AllergenId[] : [],
+    diet: typeof s.diet === "string" && s.diet in DIETS ? (s.diet as Diet) : "none",
+    // Stores saved before onboarding existed belong to people already using the app.
+    onboarded: s.onboarded === undefined ? true : Boolean(s.onboarded),
     ...(isIsoDate(s.kitChecked) ? { kitChecked: s.kitChecked } : {}),
   };
 }

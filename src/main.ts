@@ -6,6 +6,8 @@ import * as C from "./calc";
 import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from "./data";
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
 import { renderBarcodePane, stopBarcode } from "./barcode";
+import { ALLERGENS, recipeAllergens, unsuitable } from "./allergens";
+import { allergyPickerHTML, allergySummary, applyPickerClick, showOnboarding } from "./onboarding";
 import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDue, todayIso } from "./dates";
 
 // ---------- Colours and labels per group ----------
@@ -24,7 +26,7 @@ function fmt(n) { return Math.round(n).toLocaleString("en-GB"); }
 function num(v, lo, hi, d) { var n = Number(v); if (!isFinite(n)) n = d; return Math.min(hi, Math.max(lo, n)); }
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 var state = load() || defaultState();
-var ui = { screen: "home", filter: "all" };
+var ui = { screen: "home", filter: "all", showUnsuitable: false };
 function save() { saveState(state); }
 function people() { return C.people(state.house); }
 function targets() { return C.targets(state.house); }
@@ -33,7 +35,8 @@ function kindsHeld() { return C.kindsHeld(state.items); }
 var level = C.level;
 function shoppingList() { return C.shoppingList(state); }
 function recipeStatus(r) { return C.recipeStatus(r, state.items); }
-function sortedRecipes() { return C.sortedRecipes(state.items); }
+function whyNot(r) { return unsuitable(r, state.allergies, state.diet); }
+function sortedRecipes(all) { return C.sortedRecipes(state.items).filter(function (x) { return all || !whyNot(x.r); }); }
 function kitState(k) { return C.kitState(k, state); }
 function ingLabel(i) { return i.k.map(function (k) { return KINDS[k]; }).join(" or "); }
 var LEVEL_WORD = { ok: "On track", warn: "Nearly there", bad: "Short" };
@@ -56,7 +59,7 @@ function recipeCard(x) {
   }).join("");
   return '<button class="rcard" data-recipe="' + r.id + '"><div class="rcard-top"><h3>' + esc(r.title) + "</h3>" + matchBadge(s) + "</div>" +
     '<div class="meta"><span>Serves ' + r.serves + "</span><span>" + (r.cook ? "Camping stove" : "No cooking") + "</span>" + (on ? '<span class="on-list">On print list</span>' : "") + "</div>" +
-    '<div class="ings">' + chips + "</div></button>";
+    '<div class="ings">' + chips + "</div>" + (whyNot(r) ? '<p class="small warn-text">' + esc(whyNot(r)) + "</p>" : "") + "</button>";
 }
 
 // ---------- Screens ----------
@@ -146,10 +149,13 @@ function renderStore() {
 }
 
 function renderRecipes() {
-  var list = sortedRecipes(), ready = list.filter(function (x) { return x.s.ready; }).length, f = ui.filter;
+  var list = sortedRecipes(ui.showUnsuitable), ready = list.filter(function (x) { return x.s.ready; }).length, f = ui.filter;
+  var hidden = sortedRecipes(true).length - sortedRecipes(false).length;
   var shown = list.filter(function (x) { return f === "all" || (f === "ready" && x.s.ready) || (f === "nocook" && !x.r.cook) || (f === "picked" && state.picked.indexOf(x.r.id) >= 0); });
   $("screen-recipes").innerHTML =
-    '<p class="muted small">You can make <b style="color:var(--ink)">' + ready + " of " + RECIPES.length + "</b> recipes with what is in your store. Tap one to see the method or add it to your print cards.</p>" +
+    '<p class="muted small">You can make <b style="color:var(--ink)">' + ready + " of " + list.length + "</b> recipes with what is in your store. Tap one to see the method or add it to your print cards.</p>" +
+    (hidden ? '<p class="small muted">' + (ui.showUnsuitable ? "Showing every recipe, including " + plural(hidden, "one", "ones") + " that may not suit your allergies or diet. " : plural(hidden, "recipe is", "recipes are") + " hidden because of your allergies or diet. ") +
+      '<button class="link-btn" id="toggle-unsuitable">' + (ui.showUnsuitable ? "Hide them" : "Show them") + "</button></p>" : "") +
     '<div class="chips" role="group" aria-label="Filter recipes">' +
     [["all", "All"], ["ready", "Can make now"], ["nocook", "No cooking"], ["picked", "Print list"]].map(function (c) { return '<button class="chip" data-filter="' + c[0] + '" aria-pressed="' + (f === c[0]) + '">' + c[1] + "</button>"; }).join("") + "</div>" +
     '<div class="recipe-list">' + (shown.map(recipeCard).join("") || '<p class="muted">No recipes match this filter yet.</p>') + "</div>";
@@ -165,6 +171,8 @@ function renderPrepare() {
     stepperRow("children", "Children", "About 1,400 kcal a day each", h.children) +
     stepperRow("pets", "Pets", "Store their food and water too", h.pets) +
     stepperRow("days", "Days to cover", "UK advice: at least 3", h.days) + "</div></div>";
+  html += '<div class="card"><div class="card-head"><h2>Allergies and diet</h2><button class="link-btn" id="diet-btn">Change</button></div>' +
+    '<p class="small muted">' + esc(allergySummary(state)) + ". Recipes that may not suit you are hidden. Kept on this phone only.</p></div>";
   html += '<div class="card"><div class="card-head"><h2>Recipe cards to print</h2><span class="small muted num">' + picked.length + ' picked</span></div>' +
     '<p class="small muted">Four cards per A4 sheet, plus a dated stock list. Print it and keep it in a sleeve with your food.</p>' +
     (picked.length ? '<div class="rows">' + picked.map(function (r) { return '<div class="row-item"><div class="dot" style="background:var(--brand-soft);color:var(--brand)">' + r.serves + '</div><div class="row-main"><span class="t">' + esc(r.title) + '</span><span class="s">Serves ' + r.serves + " · " + (r.cook ? "Camping stove" : "No cooking") + '</span></div><button class="link-btn" data-recipe="' + r.id + '">View</button></div>'; }).join("") + "</div>" : '<p class="empty-line">No recipes picked yet.</p>') +
@@ -263,6 +271,7 @@ function openRecipe(id, refresh) {
       var got = i.k.some(function (k) { return s.held[k]; });
       return "<li><span>" + esc(ingLabel(i)) + ' <span class="muted small">' + esc(i.q) + "</span></span>" + '<span class="ing ' + (got ? "have" : i.opt ? "" : "miss") + '">' + (got ? "In store" : i.opt ? "Optional" : "Need") + "</span></li>";
     }).join("") + "</ul></div>" +
+    allergenCard(r) +
     '<div class="card"><h2 style="font-size:1rem">Method</h2><ol class="steps-list">' + r.steps.map(function (st) { return "<li>" + esc(st) + "</li>"; }).join("") + "</ol></div>" +
     '<button class="btn ' + (on ? "" : "primary") + ' block" data-toggle-pick="' + r.id + '">' + (on ? "Remove from print cards" : "Add to print cards") + "</button>";
 }
@@ -274,6 +283,19 @@ function openAbout() {
     "<p><b>Food</b> targets are approximate UK reference intakes for a short emergency: 2,000 kcal, 50 g protein and 30 g fibre per adult per day, and about 1,400 kcal, 30 g protein and 20 g fibre per child.</p>" +
     "<p><b>Balanced plate</b> follows the Eatwell Guide groups: 5 portions of fruit and veg, 3 of starchy carbs, 2 of protein and 2 of dairy per person per day.</p>" +
     '<p class="small muted num">Your household needs ' + fmt(tg.water) + " L water and " + fmt(tg.kcal) + " kcal in total. Nutrition per pack is a typical label figure, and scanned items are estimates.</p></div>";
+}
+
+// ---------- Allergies and diet ----------
+function allergenCard(r) {
+  var list = recipeAllergens(r), why = whyNot(r);
+  return '<div class="card"><h2 style="font-size:1rem">Allergens</h2>' + (why ? '<p class="warn-text small">' + esc(why) + ".</p>" : "") +
+    '<p class="small">' + (list.length ? "May contain: " + esc(list.map(function (a) { return ALLERGENS[a].toLowerCase(); }).join(", ")) + "." : "None of the 14 major allergens is usual in these ingredients.") +
+    ' <span class="muted">Brands differ, so always check the label.</span></p></div>';
+}
+function openDiet(refresh) {
+  if (!refresh) openSheet("Allergies and diet", "diet");
+  $("sheet-body").innerHTML = '<p class="small muted">We hide recipes that may contain these. This stays on your phone and is never sent anywhere.</p><div class="card">' + allergyPickerHTML(state) + "</div>" +
+    '<button class="btn primary block" id="sheet-done">Done</button>';
 }
 
 // ---------- Barcode scan (see barcode.ts) ----------
@@ -470,6 +492,13 @@ document.addEventListener("click", function (e) {
   if (d.sheet === "about") { openAbout(); return; }
   if (d.recipe) { openRecipe(d.recipe); return; }
   if (d.item) { openItem(d.item); return; }
+  if ((d.allergen || d.diet) && !el.closest(".onboard")) {
+    if (applyPickerClick(el, state)) { changed(); openDiet(true); var pf = document.querySelector(d.allergen ? '[data-allergen="' + d.allergen + '"]' : '[data-diet="' + d.diet + '"]'); if (pf) pf.focus(); }
+    return;
+  }
+  if (el.id === "diet-btn") { openDiet(); return; }
+  if (el.id === "sheet-done") { closeSheet(); return; }
+  if (el.id === "toggle-unsuitable") { ui.showUnsuitable = !ui.showUnsuitable; renderRecipes(); var tu = $("toggle-unsuitable"); if (tu) tu.focus(); return; }
   if (d.removeItem) { var gone = state.items.find(function (x) { return x.uid === d.removeItem; }); state.items = state.items.filter(function (x) { return x.uid !== d.removeItem; }); closeSheet(); changed(); if (gone) toast("Removed " + gone.name); return; }
   if (el.id === "kit-checked-btn") { state.kitChecked = todayIso(); changed(); toast("Kit check saved"); var kb = $("kit-checked-btn"); if (kb) kb.focus(); return; }
   if (d.togglePick) {
@@ -518,7 +547,7 @@ document.addEventListener("click", function (e) {
     return;
   }
   if (el.id === "pick-ready-btn") {
-    state.picked = RECIPES.filter(function (r) { return recipeStatus(r).ready; }).map(function (r) { return r.id; });
+    state.picked = sortedRecipes().filter(function (x) { return x.s.ready; }).map(function (x) { return x.r.id; });
     changed(); $("download-status").textContent = state.picked.length ? "Picked " + plural(state.picked.length, "recipe", "recipes") + " you can make now." : "No recipe can be made from your store yet."; return;
   }
 });
@@ -556,6 +585,13 @@ document.addEventListener("change", function (e) {
 
 // ---------- Boot ----------
 renderAll();
+if (!state.onboarded) {
+  showOnboarding(state, function (keepExample) {
+    if (!keepExample) { state.items = []; state.example = false; state.picked = []; }
+    changed(); go(keepExample ? "home" : "store");
+    if (!keepExample) toast("Tap + to add your first food");
+  });
+}
 try { var sc = sessionStorage.getItem("pp-screen"); if (sc && $("screen-" + sc)) go(sc); } catch (e) {}
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {
