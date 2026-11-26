@@ -270,3 +270,11 @@ a { color: var(--brand); }
 .chip[role="radio"][aria-checked="true"] { background: var(--ink); color: var(--card); }
 .rcard { align-content: start; }
 .ings { align-items: flex-start; }
+
+/* Privacy, terms and accessibility */
+.row-link { text-decoration: none; color: inherit; grid-template-columns: 1fr auto; min-height: 44px; }
+.chev { color: var(--muted); font-size: 1.4rem; font-weight: 700; }
+.legal { gap: 10px; }
+.legal h3 { font-size: 1rem; font-weight: 800; margin-top: 6px; }
+.legal ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.legal .lead { font-weight: 700; font-size: 1.02rem; }

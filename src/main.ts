@@ -7,6 +7,7 @@ import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from 
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
 import { renderBarcodePane, stopBarcode } from "./barcode";
 import { buildPrintFile } from "./print";
+import { LEGAL } from "./legal";
 import { ALLERGENS, recipeAllergens, unsuitable } from "./allergens";
 import { allergyPickerHTML, allergySummary, applyPickerClick, showOnboarding } from "./onboarding";
 import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDue, todayIso } from "./dates";
@@ -194,6 +195,10 @@ function renderPrepare() {
   html += '<div class="card"><div class="card-head"><h2>Official guidance</h2></div><ul class="links">' +
     LINKS.map(function (l) { return '<li><a href="' + l[0] + '" target="_blank" rel="noopener">' + esc(l[1]) + ' ↗</a><span class="small muted">' + esc(l[2]) + "</span></li>"; }).join("") +
     '</ul><p class="small muted">Links checked 26 November 2026.</p></div>' +
+    '<div class="card"><div class="card-head"><h2>About Pantry Prep</h2></div><div class="rows">' +
+    [["privacy", "Privacy", "Your store stays on this phone"], ["terms", "Terms and disclaimer", "General guidance, not medical advice"], ["accessibility", "Accessibility", "How we make the app usable for everyone"]].map(function (l) {
+      return '<a class="row-item row-link" href="#' + l[0] + '"><div class="row-main"><span class="t">' + l[1] + '</span><span class="s">' + l[2] + '</span></div><span class="chev" aria-hidden="true">›</span></a>';
+    }).join("") + "</div></div>" +
     '<p class="small muted disclaimer">Pantry Prep gives general guidance, not medical or dietary advice. Check allergens on packs and follow official emergency advice first.</p>';
   $("screen-prepare").innerHTML = html;
 }
@@ -285,6 +290,18 @@ function openAbout() {
     "<p><b>Balanced plate</b> follows the Eatwell Guide groups: 5 portions of fruit and veg, 3 of starchy carbs, 2 of protein and 2 of dairy per person per day.</p>" +
     '<p class="small muted num">Your household needs ' + fmt(tg.water) + " L water and " + fmt(tg.kcal) + " kcal in total. Nutrition per pack is a typical label figure, and scanned items are estimates.</p></div>";
 }
+
+// ---------- Privacy, terms and accessibility (see legal.ts) ----------
+function openLegal(page) {
+  var doc = LEGAL[page]; if (!doc) return;
+  openSheet(doc.title, "legal", page);
+  $("sheet-body").innerHTML = '<div class="card legal">' + doc.html + "</div>";
+}
+function routeHash() {
+  var page = location.hash.slice(1);
+  if (LEGAL[page]) { openLegal(page); history.replaceState(null, "", location.pathname + location.search); }
+}
+window.addEventListener("hashchange", routeHash);
 
 // ---------- Allergies and diet ----------
 function allergenCard(r) {
@@ -562,6 +579,7 @@ document.addEventListener("change", function (e) {
 
 // ---------- Boot ----------
 renderAll();
+if (state.onboarded) routeHash();
 if (!state.onboarded) {
   showOnboarding(state, function (keepExample) {
     if (!keepExample) { state.items = []; state.example = false; state.picked = []; }
