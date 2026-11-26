@@ -9,13 +9,19 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",
-    "@fontsource-variable/manrope": "5.3.0"
+    "@fontsource-variable/manrope": "5.3.0",
+    "barcode-detector": "3.2.3",
+    "qrcode-generator": "2.0.4",
+    "zxing-wasm": "3.1.6"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.63.0",
     "typescript": "5.9.3",
     "vite": "8.3.7",
     "vitest": "5.1.0"

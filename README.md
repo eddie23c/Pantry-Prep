@@ -11,7 +11,7 @@ Pantry Prep helps UK households build and check a 3-day emergency food and water
 
 ## Privacy
 
-Everything stays on the phone (browser storage). There are no accounts and nothing is sent to a server. People can save a backup file and restore it on another device.
+Everything stays on the phone (browser storage). There are no accounts and no Pantry Prep server. Barcode scans send only the barcode number to Open Food Facts. The full privacy notice is in the app (`#privacy`). People can save a backup file and restore it on another device.
 
 ## Run it locally
 
@@ -20,7 +20,8 @@ Needs Node 20 or newer.
 ```sh
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests for the calculations
+npm test           # unit tests (calculations, dates, barcodes, allergens, print file)
+npm run e2e        # end-to-end and accessibility tests in a phone-sized browser
 npm run typecheck
 npm run build      # production build in dist/
 ```
@@ -39,6 +40,13 @@ It installs to the home screen and works offline after the first visit.
 | `src/calc.ts` | Targets, totals, days covered, shopping list, recipe matching (tested) |
 | `src/storage.ts` | On-device storage, backup and restore (tested) |
 | `src/main.ts` | Screens and interactions, ported from the prototype |
+| `src/dates.ts` | Best-before dates and kit check reminders (tested) |
+| `src/barcode.ts`, `src/off.ts` | Barcode scanning and the Open Food Facts lookup (mapping tested) |
+| `src/allergens.ts` | The 14 UK allergens, diets and recipe filtering (tested) |
+| `src/onboarding.ts` | Welcome screens and the allergy picker |
+| `src/print.ts` | The printable A4 store list and recipe cards (tested) |
+| `src/legal.ts` | Privacy notice, terms and accessibility statement |
+| `e2e/` | Playwright end-to-end tests and axe accessibility checks |
 | `public/sw.js` | Offline support |
 
 ## Sources and accuracy
