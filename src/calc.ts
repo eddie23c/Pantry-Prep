@@ -25,6 +25,8 @@ export interface StoreItem {
   count: number;
   /** Best-before date as "YYYY-MM-DD", if the person entered one. */
   bb?: string;
+  /** Barcode, for items added by scanning one. */
+  code?: string;
 }
 
 export interface AppState {

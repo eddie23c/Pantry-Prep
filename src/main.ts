@@ -5,6 +5,7 @@ import "./styles.css";
 import * as C from "./calc";
 import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from "./data";
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
+import { renderBarcodePane, stopBarcode } from "./barcode";
 import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDue, todayIso } from "./dates";
 
 // ---------- Colours and labels per group ----------
@@ -136,7 +137,7 @@ function renderStore() {
     list.forEach(function (it) {
       var right = g === "water" ? fmt(it.litres * it.count) + " L" : fmt(it.kcal * it.count) + " kcal";
       html += '<div class="row-item" data-uid="' + esc(it.uid) + '"><div class="dot" style="background:color-mix(in srgb,' + GCOL[g] + ' 15%,transparent);color:' + GCOL[g] + '">' + GSHORT[g] + '</div>' +
-        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '" aria-label="' + esc(it.name) + ', details and best-before date"><span class="t">' + esc(it.name) + (it.cat ? "" : '<span class="tag">estimate</span>') + bbTag(it) + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></button>' +
+        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '" aria-label="' + esc(it.name) + ', details and best-before date"><span class="t">' + esc(it.name) + (it.cat || it.code ? "" : '<span class="tag">estimate</span>') + bbTag(it) + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></button>' +
         '<div class="stepper"><button data-step="-1" aria-label="One fewer ' + esc(it.name) + '">−</button><span class="num">' + esc(it.count) + '</span><button data-step="1" aria-label="One more ' + esc(it.name) + '">+</button></div></div>';
     });
     html += '</div><div class="section-foot"><button class="link-btn" data-addgroup="' + g + '">+ Add ' + esc(GROUPS[g].label.toLowerCase()) + "</button></div></div>";
@@ -213,6 +214,7 @@ function openSheet(title, kind, arg) {
 }
 function closeSheet() {
   if (ctl) ctl.abort();
+  stopBarcode(); delete $("sheet-body").dataset.pane;
   sheetKind = null; sheetArg = null; $("scrim").hidden = true; $("sheet").hidden = true; document.body.style.overflow = "";
   if (lastFocus && lastFocus.focus) lastFocus.focus();
 }
@@ -225,11 +227,13 @@ var addMode = "search", addGroup = "all", query = "";
 function openAdd(group) {
   addGroup = group || "all"; query = "";
   openSheet("Add food", "add");
-  $("sheet-extra").innerHTML = '<div class="seg" role="tablist"><button role="tab" data-mode="search" aria-selected="' + (addMode === "search") + '">Search foods</button><button role="tab" data-mode="scan" aria-selected="' + (addMode === "scan") + '">Scan a photo</button></div>';
+  $("sheet-extra").innerHTML = '<div class="seg" role="tablist"><button role="tab" data-mode="search" aria-selected="' + (addMode === "search") + '">Search foods</button><button role="tab" data-mode="barcode" aria-selected="' + (addMode === "barcode") + '">Barcode</button><button role="tab" data-mode="scan" aria-selected="' + (addMode === "scan") + '">Scan a photo</button></div>';
   renderAdd();
 }
 function renderAdd() {
   Array.prototype.forEach.call(document.querySelectorAll("[data-mode]"), function (b) { b.setAttribute("aria-selected", String(b.dataset.mode === addMode)); });
+  if (addMode === "barcode") { renderBarcodePane($("sheet-body"), barcodeHost); return; }
+  stopBarcode(); delete $("sheet-body").dataset.pane;
   if (addMode === "scan") { renderScanPane(); return; }
   $("sheet-body").innerHTML =
     '<label class="search" for="food-q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg><input id="food-q" type="text" placeholder="Search tins, packets, water…" autocomplete="off" value="' + esc(query) + '"></label>' +
@@ -271,6 +275,17 @@ function openAbout() {
     "<p><b>Balanced plate</b> follows the Eatwell Guide groups: 5 portions of fruit and veg, 3 of starchy carbs, 2 of protein and 2 of dairy per person per day.</p>" +
     '<p class="small muted num">Your household needs ' + fmt(tg.water) + " L water and " + fmt(tg.kcal) + " kcal in total. Nutrition per pack is a typical label figure, and scanned items are estimates.</p></div>";
 }
+
+// ---------- Barcode scan (see barcode.ts) ----------
+var barcodeHost = {
+  add: function (d, n) {
+    var ex = state.items.find(function (x) { return x.code === d.code && !x.bb; });
+    if (ex) ex.count += n;
+    else state.items.push({ uid: uid(), cat: null, code: d.code, name: d.name, pack: d.pack, group: d.group, kind: d.kind, kcal: d.kcal, protein: d.protein, fibre: d.fibre, portions: d.portions, litres: d.litres, count: n });
+    save(); renderAll();
+  },
+  toast: function (m) { toast(m); }
+};
 
 // ---------- Best-before dates ----------
 function bbTag(it) {

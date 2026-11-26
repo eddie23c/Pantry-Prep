@@ -58,6 +58,7 @@ export function sanitise(raw: unknown): AppState | null {
       litres: clamp(it.litres, 0, 50, 0),
       count: Math.round(clamp(it.count, 1, 999, 1)),
       ...(isIsoDate(it.bb) ? { bb: it.bb } : {}),
+      ...(typeof it.code === "string" && /^\d{8,14}$/.test(it.code) ? { code: it.code } : {}),
     }];
   });
   const kit: AppState["kit"] = {};
