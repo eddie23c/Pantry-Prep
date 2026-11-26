@@ -1,5 +1,6 @@
 // Pure calculations: targets, totals, days covered, shopping list and recipe matching.
 // No DOM access here, so everything is unit tested in calc.test.ts.
+import type { AllergenId, Diet } from "./allergens";
 import { CAT, GROUPS, KIT, RECIPES, type GroupId, type KitItem, type Recipe } from "./data";
 
 export interface House {
@@ -23,6 +24,10 @@ export interface StoreItem {
   portions: number;
   litres: number;
   count: number;
+  /** Best-before date as "YYYY-MM-DD", if the person entered one. */
+  bb?: string;
+  /** Barcode, for items added by scanning one. */
+  code?: string;
 }
 
 export interface AppState {
@@ -32,6 +37,13 @@ export interface AppState {
   picked: string[];
   /** Kit items ticked by hand ("hand") or seen in a photo ("photo"). */
   kit: Record<string, "hand" | "photo">;
+  /** When the person last confirmed their kit, as "YYYY-MM-DD". */
+  kitChecked?: string;
+  /** Allergens to avoid in recipes. Kept on the phone only. */
+  allergies: AllergenId[];
+  diet: Diet;
+  /** False until the person finishes the welcome screens. */
+  onboarded: boolean;
 }
 
 // Per person per day. Water is the UK Government Be Ready figure for drinking.

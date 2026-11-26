@@ -5,13 +5,21 @@ import "./styles.css";
 import * as C from "./calc";
 import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from "./data";
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
+import { renderBarcodePane, stopBarcode } from "./barcode";
+import { buildPrintFile } from "./print";
+import { LEGAL } from "./legal";
+import { ALLERGENS, recipeAllergens, unsuitable } from "./allergens";
+import { allergyPickerHTML, allergySummary, applyPickerClick, showOnboarding } from "./onboarding";
+import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDue, todayIso } from "./dates";
 
 // ---------- Colours and labels per group ----------
 var GCOL = { water: "var(--water)", fruitveg: "var(--fibre)", starchy: "var(--warn)", protein: "var(--protein)", dairy: "var(--water)", oils: "var(--energy)", other: "var(--muted)" };
+// Darker text versions of GCOL, for numbers and labels on tinted chips (contrast 4.5:1).
+var GINK = { water: "var(--water-ink)", fruitveg: "var(--fibre-ink)", starchy: "var(--warn-ink)", protein: "var(--protein-ink)", dairy: "var(--water-ink)", oils: "var(--energy-ink)", other: "var(--muted)" };
 var GSHORT = { water: "H₂O", fruitveg: "FV", starchy: "SC", protein: "PR", dairy: "DA", oils: "OI", other: "EX" };
 
 function addItem(item) {
-  var ex = item.cat && state.items.find(function (x) { return x.cat === item.cat && x.name === item.name; });
+  var ex = item.cat && state.items.find(function (x) { return x.cat === item.cat && x.name === item.name && (x.bb || "") === (item.bb || ""); });
   if (ex) ex.count += item.count; else state.items.push(item);
 }
 
@@ -22,7 +30,7 @@ function fmt(n) { return Math.round(n).toLocaleString("en-GB"); }
 function num(v, lo, hi, d) { var n = Number(v); if (!isFinite(n)) n = d; return Math.min(hi, Math.max(lo, n)); }
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 var state = load() || defaultState();
-var ui = { screen: "home", filter: "all" };
+var ui = { screen: "home", filter: "all", showUnsuitable: false };
 function save() { saveState(state); }
 function people() { return C.people(state.house); }
 function targets() { return C.targets(state.house); }
@@ -31,7 +39,8 @@ function kindsHeld() { return C.kindsHeld(state.items); }
 var level = C.level;
 function shoppingList() { return C.shoppingList(state); }
 function recipeStatus(r) { return C.recipeStatus(r, state.items); }
-function sortedRecipes() { return C.sortedRecipes(state.items); }
+function whyNot(r) { return unsuitable(r, state.allergies, state.diet); }
+function sortedRecipes(all) { return C.sortedRecipes(state.items).filter(function (x) { return all || !whyNot(x.r); }); }
 function kitState(k) { return C.kitState(k, state); }
 function ingLabel(i) { return i.k.map(function (k) { return KINDS[k]; }).join(" or "); }
 var LEVEL_WORD = { ok: "On track", warn: "Nearly there", bad: "Short" };
@@ -54,7 +63,7 @@ function recipeCard(x) {
   }).join("");
   return '<button class="rcard" data-recipe="' + r.id + '"><div class="rcard-top"><h3>' + esc(r.title) + "</h3>" + matchBadge(s) + "</div>" +
     '<div class="meta"><span>Serves ' + r.serves + "</span><span>" + (r.cook ? "Camping stove" : "No cooking") + "</span>" + (on ? '<span class="on-list">On print list</span>' : "") + "</div>" +
-    '<div class="ings">' + chips + "</div></button>";
+    '<div class="ings">' + chips + "</div>" + (whyNot(r) ? '<p class="small warn-text">' + esc(whyNot(r)) + "</p>" : "") + "</button>";
 }
 
 // ---------- Screens ----------
@@ -80,7 +89,7 @@ function renderHome() {
     '<p class="small muted">' + (pct >= 1 ? "Food and water both last the full " + plural(h.days, "day", "days") + "." : "Your " + limiter + " runs out first. Food lasts " + foodDays.toFixed(1) + " days, water " + waterDays.toFixed(1) + " days.") + "</p>" +
     '<div class="equation num"><div class="t"><span class="v">' + fmt(tg.kcal) + '</span><span class="k">Needed kcal</span></div><span class="op">−</span>' +
     '<div class="t"><span class="v">' + fmt(t.kcal) + '</span><span class="k">In store</span></div><span class="op">=</span>' +
-    '<div class="t"><span class="v" style="color:' + (togo ? "var(--energy)" : "var(--fibre)") + '">' + fmt(togo) + '</span><span class="k">To go</span></div></div></div>';
+    '<div class="t"><span class="v" style="color:' + (togo ? "var(--energy-ink)" : "var(--fibre-ink)") + '">' + fmt(togo) + '</span><span class="k">To go</span></div></div></div>';
 
   var minis = [
     { n: "Water", have: t.water, need: tg.water, u: "L", c: "var(--water)" },
@@ -100,18 +109,19 @@ function renderHome() {
       return '<div class="bar-row"><div class="bar-top"><b>' + esc(GROUPS[g].label) + '</b><span class="num muted">' + fmt(have) + " / " + fmt(need) + ' portions</span></div><div class="bar"><i style="width:' + Math.min(100, p * 100).toFixed(1) + "%;background:" + GCOL[g] + '"></i></div></div>';
     }).join("") + "</div></div>";
 
+  html += useSoonCard();
   var shop = shoppingList();
   html += '<div class="card"><div class="card-head"><h2>Top up</h2><span class="small muted">' + (shop.length ? "Tap + when bought" : "") + '</span></div><div class="rows">' +
     (shop.length ? shop.map(function (s) {
       var c = CAT[s.id];
-      return '<div class="row-item"><div class="dot num" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 16%,transparent);color:' + GCOL[c.group] + '">' + s.n + '×</div>' +
+      return '<div class="row-item"><div class="dot num" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 16%,transparent);color:' + GINK[c.group] + '">' + s.n + '×</div>' +
         '<div class="row-main"><span class="t">' + esc(c.name) + '</span><span class="s">' + esc(c.pack) + " · " + esc(s.why) + '</span></div>' +
         '<button class="add-round" data-buy="' + s.id + '" data-n="' + s.n + '" aria-label="Mark ' + esc(c.name) + ' as bought">+</button></div>';
     }).join("") : '<p class="empty-line">Nothing essential to buy. Your store covers every target.</p>') + "</div></div>";
 
   var kitDone = KIT.filter(function (k) { return kitState(k); }).length;
   html += '<div class="card"><div class="card-head"><h2>Emergency kit</h2><button class="link-btn" data-go="prepare">Open checklist</button></div>' +
-    '<div class="bar-row"><div class="bar-top"><b>' + kitDone + " of " + KIT.length + ' Be Ready items</b><span class="muted small">' + (kitDone === KIT.length ? "Complete" : "Photograph your kit to tick items off") + '</span></div><div class="bar"><i style="width:' + (kitDone / KIT.length * 100).toFixed(1) + '%;background:var(--brand)"></i></div></div></div>';
+    '<div class="bar-row"><div class="bar-top"><b>' + kitDone + " of " + KIT.length + ' Be Ready items</b><span class="muted small">' + (kitCheckDue(state.kitChecked, todayIso()) ? (state.kitChecked ? "Due a check" : "Not checked yet") : kitDone === KIT.length ? "Complete" : "Checked " + formatDate(state.kitChecked)) + '</span></div><div class="bar"><i style="width:' + (kitDone / KIT.length * 100).toFixed(1) + '%;background:var(--brand)"></i></div></div></div>';
   var ready = sortedRecipes().filter(function (x) { return x.s.ready; });
   html += '<div class="card"><div class="card-head"><h2>Cook from your store</h2><button class="link-btn" data-go="recipes">See all</button></div>' +
     (ready.length ? '<div class="carousel">' + ready.map(recipeCard).join("") + "</div>" : '<p class="empty-line">Add a few more basics and recipes will appear here.</p>') + "</div>";
@@ -133,8 +143,8 @@ function renderStore() {
     if (!list.length) html += '<p class="empty-line">Nothing here yet.</p>';
     list.forEach(function (it) {
       var right = g === "water" ? fmt(it.litres * it.count) + " L" : fmt(it.kcal * it.count) + " kcal";
-      html += '<div class="row-item" data-uid="' + esc(it.uid) + '"><div class="dot" style="background:color-mix(in srgb,' + GCOL[g] + ' 15%,transparent);color:' + GCOL[g] + '">' + GSHORT[g] + '</div>' +
-        '<div class="row-main"><span class="t">' + esc(it.name) + (it.cat ? "" : '<span class="tag">estimate</span>') + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></div>' +
+      html += '<div class="row-item" data-uid="' + esc(it.uid) + '"><div class="dot" style="background:color-mix(in srgb,' + GCOL[g] + ' 15%,transparent);color:' + GINK[g] + '">' + GSHORT[g] + '</div>' +
+        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '"><span class="t">' + esc(it.name) + (it.cat || it.code ? "" : '<span class="tag">estimate</span>') + bbTag(it) + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></button>' +
         '<div class="stepper"><button data-step="-1" aria-label="One fewer ' + esc(it.name) + '">−</button><span class="num">' + esc(it.count) + '</span><button data-step="1" aria-label="One more ' + esc(it.name) + '">+</button></div></div>';
     });
     html += '</div><div class="section-foot"><button class="link-btn" data-addgroup="' + g + '">+ Add ' + esc(GROUPS[g].label.toLowerCase()) + "</button></div></div>";
@@ -143,10 +153,13 @@ function renderStore() {
 }
 
 function renderRecipes() {
-  var list = sortedRecipes(), ready = list.filter(function (x) { return x.s.ready; }).length, f = ui.filter;
+  var list = sortedRecipes(ui.showUnsuitable), ready = list.filter(function (x) { return x.s.ready; }).length, f = ui.filter;
+  var hidden = sortedRecipes(true).length - sortedRecipes(false).length;
   var shown = list.filter(function (x) { return f === "all" || (f === "ready" && x.s.ready) || (f === "nocook" && !x.r.cook) || (f === "picked" && state.picked.indexOf(x.r.id) >= 0); });
   $("screen-recipes").innerHTML =
-    '<p class="muted small">You can make <b style="color:var(--ink)">' + ready + " of " + RECIPES.length + "</b> recipes with what is in your store. Tap one to see the method or add it to your print cards.</p>" +
+    '<p class="muted small">You can make <b style="color:var(--ink)">' + ready + " of " + list.length + "</b> recipes with what is in your store. Tap one to see the method or add it to your print cards.</p>" +
+    (hidden ? '<p class="small muted">' + (ui.showUnsuitable ? "Showing every recipe, including " + plural(hidden, "one", "ones") + " that may not suit your allergies or diet. " : plural(hidden, "recipe is", "recipes are") + " hidden because of your allergies or diet. ") +
+      '<button class="link-btn" id="toggle-unsuitable">' + (ui.showUnsuitable ? "Hide them" : "Show them") + "</button></p>" : "") +
     '<div class="chips" role="group" aria-label="Filter recipes">' +
     [["all", "All"], ["ready", "Can make now"], ["nocook", "No cooking"], ["picked", "Print list"]].map(function (c) { return '<button class="chip" data-filter="' + c[0] + '" aria-pressed="' + (f === c[0]) + '">' + c[1] + "</button>"; }).join("") + "</div>" +
     '<div class="recipe-list">' + (shown.map(recipeCard).join("") || '<p class="muted">No recipes match this filter yet.</p>') + "</div>";
@@ -162,6 +175,8 @@ function renderPrepare() {
     stepperRow("children", "Children", "About 1,400 kcal a day each", h.children) +
     stepperRow("pets", "Pets", "Store their food and water too", h.pets) +
     stepperRow("days", "Days to cover", "UK advice: at least 3", h.days) + "</div></div>";
+  html += '<div class="card"><div class="card-head"><h2>Allergies and diet</h2><button class="link-btn" id="diet-btn">Change</button></div>' +
+    '<p class="small muted">' + esc(allergySummary(state)) + ". Recipes that may not suit you are hidden. Kept on this phone only.</p></div>";
   html += '<div class="card"><div class="card-head"><h2>Recipe cards to print</h2><span class="small muted num">' + picked.length + ' picked</span></div>' +
     '<p class="small muted">Four cards per A4 sheet, plus a dated stock list. Print it and keep it in a sleeve with your food.</p>' +
     (picked.length ? '<div class="rows">' + picked.map(function (r) { return '<div class="row-item"><div class="dot" style="background:var(--brand-soft);color:var(--brand)">' + r.serves + '</div><div class="row-main"><span class="t">' + esc(r.title) + '</span><span class="s">Serves ' + r.serves + " · " + (r.cook ? "Camping stove" : "No cooking") + '</span></div><button class="link-btn" data-recipe="' + r.id + '">View</button></div>'; }).join("") + "</div>" : '<p class="empty-line">No recipes picked yet.</p>') +
@@ -173,7 +188,7 @@ function renderPrepare() {
     KIT.map(function (k) {
       var st = kitState(k), tag = st === "auto" ? '<span class="tag">From your store</span>' : st === "photo" ? '<span class="tag tag-photo">Seen in photo</span>' : "";
       return '<li><label for="kit-' + k.id + '"><input type="checkbox" id="kit-' + k.id + '" data-kit="' + k.id + '"' + (st ? " checked" : "") + (k.auto ? " disabled" : "") + '><span>' + esc(k.label) + tag + "</span></label></li>";
-    }).join("") + '</ul><button class="btn block" data-scan-kit="1">Scan my kit with the camera</button></div>';
+    }).join("") + '</ul>' + kitCheckRow() + '<button class="btn block" data-scan-kit="1">Scan my kit with the camera</button></div>';
   html += '<div class="card"><div class="card-head"><h2>Back up your store</h2></div>' +
     '<p class="small muted">Your store is kept only on this device. Save a backup file now and then, so you can restore it on a new phone.</p>' +
     '<button class="btn block" id="backup-btn">Save a backup file</button>' +
@@ -182,12 +197,16 @@ function renderPrepare() {
   html += '<div class="card"><div class="card-head"><h2>Official guidance</h2></div><ul class="links">' +
     LINKS.map(function (l) { return '<li><a href="' + l[0] + '" target="_blank" rel="noopener">' + esc(l[1]) + ' ↗</a><span class="small muted">' + esc(l[2]) + "</span></li>"; }).join("") +
     '</ul><p class="small muted">Links checked 26 November 2026.</p></div>' +
+    '<div class="card"><div class="card-head"><h2>About Pantry Prep</h2></div><div class="rows">' +
+    [["privacy", "Privacy", "Your store stays on this phone"], ["terms", "Terms and disclaimer", "General guidance, not medical advice"], ["accessibility", "Accessibility", "How we make the app usable for everyone"]].map(function (l) {
+      return '<a class="row-item row-link" href="#' + l[0] + '"><div class="row-main"><span class="t">' + l[1] + '</span><span class="s">' + l[2] + '</span></div><span class="chev" aria-hidden="true">›</span></a>';
+    }).join("") + "</div></div>" +
     '<p class="small muted disclaimer">Pantry Prep gives general guidance, not medical or dietary advice. Check allergens on packs and follow official emergency advice first.</p>';
   $("screen-prepare").innerHTML = html;
 }
 
 function renderAll() { renderTop(); renderHome(); renderStore(); renderRecipes(); renderPrepare(); }
-function changed() { save(); renderAll(); if (sheetKind === "recipe" && sheetArg) openRecipe(sheetArg, true); }
+function changed() { save(); renderAll(); if (sheetKind === "recipe" && sheetArg) openRecipe(sheetArg, true); if (sheetKind === "item" && sheetArg) openItem(sheetArg, true); }
 
 function go(name) {
   ui.screen = name;
@@ -207,10 +226,13 @@ function openSheet(title, kind, arg) {
   sheetKind = kind; sheetArg = arg || null;
   $("sheet-h").textContent = title; $("sheet-extra").innerHTML = ""; $("sheet-body").innerHTML = "";
   $("scrim").hidden = false; $("sheet").hidden = false; document.body.style.overflow = "hidden";
+  document.querySelector(".app").inert = true; document.querySelector(".tabbar").inert = true;
   setTimeout(function () { $("sheet-close").focus(); }, 30);
 }
 function closeSheet() {
   if (ctl) ctl.abort();
+  stopBarcode(); delete $("sheet-body").dataset.pane;
+  document.querySelector(".app").inert = false; document.querySelector(".tabbar").inert = false;
   sheetKind = null; sheetArg = null; $("scrim").hidden = true; $("sheet").hidden = true; document.body.style.overflow = "";
   if (lastFocus && lastFocus.focus) lastFocus.focus();
 }
@@ -223,11 +245,13 @@ var addMode = "search", addGroup = "all", query = "";
 function openAdd(group) {
   addGroup = group || "all"; query = "";
   openSheet("Add food", "add");
-  $("sheet-extra").innerHTML = '<div class="seg" role="tablist"><button role="tab" data-mode="search" aria-selected="' + (addMode === "search") + '">Search foods</button><button role="tab" data-mode="scan" aria-selected="' + (addMode === "scan") + '">Scan a photo</button></div>';
+  $("sheet-extra").innerHTML = '<div class="seg" role="tablist"><button role="tab" data-mode="search" aria-selected="' + (addMode === "search") + '">Search foods</button><button role="tab" data-mode="barcode" aria-selected="' + (addMode === "barcode") + '">Barcode</button><button role="tab" data-mode="scan" aria-selected="' + (addMode === "scan") + '">Scan a photo</button></div>';
   renderAdd();
 }
 function renderAdd() {
   Array.prototype.forEach.call(document.querySelectorAll("[data-mode]"), function (b) { b.setAttribute("aria-selected", String(b.dataset.mode === addMode)); });
+  if (addMode === "barcode") { renderBarcodePane($("sheet-body"), barcodeHost); return; }
+  stopBarcode(); delete $("sheet-body").dataset.pane;
   if (addMode === "scan") { renderScanPane(); return; }
   $("sheet-body").innerHTML =
     '<label class="search" for="food-q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg><input id="food-q" type="text" placeholder="Search tins, packets, water…" autocomplete="off" value="' + esc(query) + '"></label>' +
@@ -240,7 +264,7 @@ function renderResults() {
   var res = CATALOGUE.filter(function (c) { return (addGroup === "all" || c.group === addGroup) && (!q || (c.name + " " + c.pack + " " + KINDS[c.kind]).toLowerCase().indexOf(q) >= 0); });
   var counts = {}; state.items.forEach(function (it) { if (it.cat) counts[it.cat] = (counts[it.cat] || 0) + it.count; });
   $("food-results").innerHTML = res.length ? res.map(function (c) {
-    return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 15%,transparent);color:' + GCOL[c.group] + '">' + GSHORT[c.group] + '</div>' +
+    return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 15%,transparent);color:' + GINK[c.group] + '">' + GSHORT[c.group] + '</div>' +
       '<div class="row-main"><span class="t">' + esc(c.name) + '</span><span class="s num">' + esc(c.pack) + " · " + (c.group === "water" ? c.litres + " L" : fmt(c.kcal) + " kcal") + (counts[c.id] ? " · " + counts[c.id] + " in store" : "") + '</span></div>' +
       '<button class="add-round" data-quick="' + c.id + '" aria-label="Add one ' + esc(c.name) + '">+</button></div>';
   }).join("") : '<p class="empty-line">No match. Try another word, or scan a photo instead.</p>';
@@ -257,6 +281,7 @@ function openRecipe(id, refresh) {
       var got = i.k.some(function (k) { return s.held[k]; });
       return "<li><span>" + esc(ingLabel(i)) + ' <span class="muted small">' + esc(i.q) + "</span></span>" + '<span class="ing ' + (got ? "have" : i.opt ? "" : "miss") + '">' + (got ? "In store" : i.opt ? "Optional" : "Need") + "</span></li>";
     }).join("") + "</ul></div>" +
+    allergenCard(r) +
     '<div class="card"><h2 style="font-size:1rem">Method</h2><ol class="steps-list">' + r.steps.map(function (st) { return "<li>" + esc(st) + "</li>"; }).join("") + "</ol></div>" +
     '<button class="btn ' + (on ? "" : "primary") + ' block" data-toggle-pick="' + r.id + '">' + (on ? "Remove from print cards" : "Add to print cards") + "</button>";
 }
@@ -268,6 +293,81 @@ function openAbout() {
     "<p><b>Food</b> targets are approximate UK reference intakes for a short emergency: 2,000 kcal, 50 g protein and 30 g fibre per adult per day, and about 1,400 kcal, 30 g protein and 20 g fibre per child.</p>" +
     "<p><b>Balanced plate</b> follows the Eatwell Guide groups: 5 portions of fruit and veg, 3 of starchy carbs, 2 of protein and 2 of dairy per person per day.</p>" +
     '<p class="small muted num">Your household needs ' + fmt(tg.water) + " L water and " + fmt(tg.kcal) + " kcal in total. Nutrition per pack is a typical label figure, and scanned items are estimates.</p></div>";
+}
+
+// ---------- Privacy, terms and accessibility (see legal.ts) ----------
+function openLegal(page) {
+  var doc = LEGAL[page]; if (!doc) return;
+  openSheet(doc.title, "legal", page);
+  $("sheet-body").innerHTML = '<div class="card legal">' + doc.html + "</div>";
+}
+function routeHash() {
+  var page = location.hash.slice(1);
+  if (LEGAL[page]) { openLegal(page); history.replaceState(null, "", location.pathname + location.search); }
+}
+window.addEventListener("hashchange", routeHash);
+
+// ---------- Allergies and diet ----------
+function allergenCard(r) {
+  var list = recipeAllergens(r), why = whyNot(r);
+  return '<div class="card"><h2 style="font-size:1rem">Allergens</h2>' + (why ? '<p class="warn-text small">' + esc(why) + ".</p>" : "") +
+    '<p class="small">' + (list.length ? "May contain: " + esc(list.map(function (a) { return ALLERGENS[a].toLowerCase(); }).join(", ")) + "." : "None of the 14 major allergens is usual in these ingredients.") +
+    ' <span class="muted">Brands differ, so always check the label.</span></p></div>';
+}
+function openDiet(refresh) {
+  if (!refresh) openSheet("Allergies and diet", "diet");
+  $("sheet-body").innerHTML = '<p class="small muted">We hide recipes that may contain these. This stays on your phone and is never sent anywhere.</p><div class="card">' + allergyPickerHTML(state) + "</div>" +
+    '<button class="btn primary block" id="sheet-done">Done</button>';
+}
+
+// ---------- Barcode scan (see barcode.ts) ----------
+var barcodeHost = {
+  add: function (d, n) {
+    var ex = state.items.find(function (x) { return x.code === d.code && !x.bb; });
+    if (ex) ex.count += n;
+    else state.items.push({ uid: uid(), cat: null, code: d.code, name: d.name, pack: d.pack, group: d.group, kind: d.kind, kcal: d.kcal, protein: d.protein, fibre: d.fibre, portions: d.portions, litres: d.litres, count: n });
+    save(); renderAll();
+  },
+  toast: function (m) { toast(m); }
+};
+
+// ---------- Best-before dates ----------
+function bbTag(it) {
+  var st = expiryStatus(it.bb, todayIso());
+  if (!st || st === "ok") return "";
+  return '<span class="tag tag-' + st + '">' + (st === "expired" ? "Past date" : "Use soon") + "</span>";
+}
+function useSoonCard() {
+  var e = expiring(state.items, todayIso()), list = e.expired.concat(e.soon);
+  if (!list.length) return "";
+  return '<div class="card"><div class="card-head"><h2>Eat and replace</h2><span class="status-chip st-' + (e.expired.length ? "bad" : "warn") + '">' + plural(list.length, "item", "items") + '</span></div>' +
+    '<p class="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up.</p><div class="rows">' +
+    list.slice(0, 5).map(function (it) {
+      var st = expiryStatus(it.bb, todayIso());
+      return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,var(--' + (st === "expired" ? "bad" : "warn") + ') 15%,transparent);color:var(--' + (st === "expired" ? "bad" : "warn") + '-ink)" aria-hidden="true">!</div>' +
+        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '"><span class="t">' + esc(it.name) + '</span><span class="s">' + esc(expiryPhrase(it.bb, todayIso())) + "</span></button><span></span></div>";
+    }).join("") + (list.length > 5 ? '<p class="empty-line">And ' + (list.length - 5) + ' more in your store.</p>' : "") + "</div></div>";
+}
+function openItem(id, refresh) {
+  var it = state.items.find(function (x) { return x.uid === id; });
+  if (!it) { if (refresh) closeSheet(); return; }
+  if (!refresh) openSheet(it.name, "item", id);
+  var right = it.group === "water" ? fmt(it.litres * it.count) + " L" : fmt(it.kcal * it.count) + " kcal";
+  $("sheet-body").innerHTML =
+    '<div class="card" data-uid="' + esc(it.uid) + '"><div class="set-row"><div class="row-main"><span class="t">How many</span><span class="s num">' + esc(it.pack || "Pack") + " · " + right + " in total</span></div>" +
+    '<div class="stepper"><button data-step="-1" aria-label="One fewer">−</button><span class="num">' + esc(it.count) + '</span><button data-step="1" aria-label="One more">+</button></div></div>' +
+    '<label class="field" for="bb-input"><span class="t">Best-before date</span><span class="s">Use the earliest date if your packs differ. We remind you ' + 30 + ' days ahead.</span>' +
+    '<input type="date" id="bb-input" data-bb="' + esc(it.uid) + '" value="' + esc(it.bb || "") + '"></label>' +
+    (it.bb ? '<p class="small ' + (expiryStatus(it.bb, todayIso()) === "ok" ? "muted" : "warn-text") + '">' + esc(expiryPhrase(it.bb, todayIso())) + "</p>" : "") +
+    "</div>" +
+    '<div class="card"><p class="small muted num">Per pack: ' + (it.group === "water" ? fmt(it.litres) + " L water" : fmt(it.kcal) + " kcal, " + fmt(it.protein) + " g protein, " + fmt(it.fibre) + " g fibre") + "." + (it.cat ? " Typical UK label figure." : " Estimated, so check the pack.") + "</p></div>" +
+    '<button class="btn danger block" data-remove-item="' + esc(it.uid) + '">Remove from store</button>';
+}
+function kitCheckRow() {
+  var due = kitCheckDue(state.kitChecked, todayIso());
+  return '<div class="kit-check' + (due ? " due" : "") + '"><div class="row-main"><span class="t">' + (state.kitChecked ? "Last checked " + esc(formatDate(state.kitChecked)) : "Not checked yet") + '</span>' +
+    '<span class="s">' + (due ? "Look through your kit every 3 months: test torches and radios, swap old batteries and medicines." : "Next check due in about 3 months.") + "</span></div>" +
+    '<button class="btn' + (due ? " primary" : "") + '" id="kit-checked-btn">I checked it today</button></div>';
 }
 
 // ---------- Photo scan ----------
@@ -348,34 +448,10 @@ function runScan() {
 
 // ---------- Print file ----------
 function pickedRecipes() { return RECIPES.filter(function (r) { return state.picked.indexOf(r.id) >= 0; }); }
-function cardHTML(r) {
-  return '<div class="card"><div class="band"><span>' + (r.cook ? "Stove" + (r.water ? " · " + r.water + " L water" : "") : "No cook") + "</span><span>Serves " + r.serves + "</span></div><h3>" + esc(r.title) + "</h3><b>You need</b><ul>" +
-    r.ings.map(function (i) { return "<li>" + esc(ingLabel(i)) + ": " + esc(i.q) + (i.opt ? " (optional)" : "") + "</li>"; }).join("") + "</ul><b>Method</b><ol>" +
-    r.steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ol></div>";
-}
-function buildPrintFile() {
-  var p = pickedRecipes(), t = totals(), tg = targets(), pages = [];
-  var today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  for (var i = 0; i < p.length; i += 4) pages.push(p.slice(i, i + 4));
-  var rows = state.items.map(function (it) { return "<tr><td>" + esc(it.name) + "</td><td>" + esc(it.pack || "") + "</td><td>" + esc(it.count) + "</td><td>&nbsp;</td></tr>"; }).join("");
-  return '<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>Pantry Prep cards</title><style>' +
-    "@page{size:A4;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10.5pt}" +
-    ".sheet{width:190mm;height:277mm;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6mm;break-after:page;page-break-after:always}" +
-    ".card{border:1.5pt dashed #333;border-radius:3mm;padding:5mm;overflow:hidden}.band{background:#0e7a62;color:#fff;margin:-5mm -5mm 3mm;padding:2mm 5mm;font-weight:bold;font-size:8.5pt;letter-spacing:.06em;text-transform:uppercase;display:flex;justify-content:space-between;border-radius:3mm 3mm 0 0}" +
-    "h3{font-size:14pt;margin:0 0 2mm}ul,ol{margin:1mm 0 3mm;padding-left:5mm}li{margin-bottom:.8mm}.cover{break-after:page;page-break-after:always}" +
-    "table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}h1{font-size:20pt;margin:0 0 2mm}.note{color:#444;font-size:9pt}" +
-    "@media screen{body{padding:10mm;background:#ddd}.sheet,.cover{background:#fff;margin:0 auto 10mm;padding:10mm;box-sizing:content-box}.tip{max-width:190mm;margin:0 auto 6mm;background:#e3f4ee;padding:4mm;border:1px solid #0e7a62}}@media print{.tip{display:none}}" +
-    '</style></head><body><div class="tip">Print this page on A4 (File, then Print). Cut along the dashed lines and keep the cards with your food store.</div>' +
-    '<div class="cover"><h1>Emergency food store</h1><p>Checked on ' + esc(today) + ". Covers " + plural(state.house.adults, "adult", "adults") + " and " + plural(state.house.children, "child", "children") + " for " + plural(state.house.days, "day", "days") + ".</p>" +
-    "<p>Food: about " + fmt(t.kcal) + " of " + fmt(tg.kcal) + " kcal needed. Water: " + fmt(t.water) + " of " + fmt(tg.water) + " L needed (3 L per person per day for drinking).</p>" +
-    "<table><thead><tr><th>Item</th><th>Pack</th><th>Count</th><th>Best before</th></tr></thead><tbody>" + rows + "</tbody></table>" +
-    '<p class="note">UK Government advice: beready.campaign.gov.uk. Eat and replace items before their best-before date.</p></div>' +
-    pages.map(function (pg) { return '<div class="sheet">' + pg.map(cardHTML).join("") + "</div>"; }).join("") + "</body></html>";
-}
 var downloadsP = (window.claude && window.claude.use) ? window.claude.use("downloads").catch(function () { return null; }) : Promise.resolve(null);
 function download() {
   var st = $("download-status"); st.textContent = "Preparing your cards…";
-  var html = buildPrintFile();
+  var html = buildPrintFile(state, new URL("./", location.href).href);
   downloadsP.then(function (dl) {
     if (!dl) {
       // Normal browser: open the printable page in a new tab, or save it if pop-ups are blocked.
@@ -413,6 +489,16 @@ document.addEventListener("click", function (e) {
   if (el.id === "house-btn") { go("prepare"); return; }
   if (d.sheet === "about") { openAbout(); return; }
   if (d.recipe) { openRecipe(d.recipe); return; }
+  if (d.item) { openItem(d.item); return; }
+  if ((d.allergen || d.diet) && !el.closest(".onboard")) {
+    if (applyPickerClick(el, state)) { changed(); openDiet(true); var pf = document.querySelector(d.allergen ? '[data-allergen="' + d.allergen + '"]' : '[data-diet="' + d.diet + '"]'); if (pf) pf.focus(); }
+    return;
+  }
+  if (el.id === "diet-btn") { openDiet(); return; }
+  if (el.id === "sheet-done") { closeSheet(); return; }
+  if (el.id === "toggle-unsuitable") { ui.showUnsuitable = !ui.showUnsuitable; renderRecipes(); var tu = $("toggle-unsuitable"); if (tu) tu.focus(); return; }
+  if (d.removeItem) { var gone = state.items.find(function (x) { return x.uid === d.removeItem; }); state.items = state.items.filter(function (x) { return x.uid !== d.removeItem; }); closeSheet(); changed(); if (gone) toast("Removed " + gone.name); return; }
+  if (el.id === "kit-checked-btn") { state.kitChecked = todayIso(); changed(); toast("Kit check saved"); var kb = $("kit-checked-btn"); if (kb) kb.focus(); return; }
   if (d.togglePick) {
     var id = d.togglePick, on = state.picked.indexOf(id) >= 0;
     state.picked = state.picked.filter(function (x) { return x !== id; }); if (!on) state.picked.push(id);
@@ -459,7 +545,7 @@ document.addEventListener("click", function (e) {
     return;
   }
   if (el.id === "pick-ready-btn") {
-    state.picked = RECIPES.filter(function (r) { return recipeStatus(r).ready; }).map(function (r) { return r.id; });
+    state.picked = sortedRecipes().filter(function (x) { return x.s.ready; }).map(function (x) { return x.r.id; });
     changed(); $("download-status").textContent = state.picked.length ? "Picked " + plural(state.picked.length, "recipe", "recipes") + " you can make now." : "No recipe can be made from your store yet."; return;
   }
 });
@@ -487,11 +573,24 @@ document.addEventListener("change", function (e) {
     });
     return;
   }
+  if (t.dataset.bb) {
+    var bit = state.items.find(function (x) { return x.uid === t.dataset.bb; }); if (!bit) return;
+    if (isIsoDate(t.value)) bit.bb = t.value; else delete bit.bb;
+    changed(); var bi = $("bb-input"); if (bi) bi.focus(); return;
+  }
   if (t.dataset.kit != null) { if (t.checked) state.kit[t.dataset.kit] = "hand"; else delete state.kit[t.dataset.kit]; save(); renderPrepare(); var again = $("kit-" + t.dataset.kit); if (again) again.focus(); }
 });
 
 // ---------- Boot ----------
 renderAll();
+if (state.onboarded) routeHash();
+if (!state.onboarded) {
+  showOnboarding(state, function (keepExample) {
+    if (!keepExample) { state.items = []; state.example = false; state.picked = []; }
+    changed(); go(keepExample ? "home" : "store");
+    if (!keepExample) toast("Tap + to add your first food");
+  });
+}
 try { var sc = sessionStorage.getItem("pp-screen"); if (sc && $("screen-" + sc)) go(sc); } catch (e) {}
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {

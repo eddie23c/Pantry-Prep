@@ -2,6 +2,8 @@
 // Backup and restore use a JSON file the person keeps themselves.
 import type { AppState, StoreItem } from "./calc";
 import { CAT, EXAMPLE, GROUPS, type GroupId } from "./data";
+import { isIsoDate } from "./dates";
+import { ALLERGENS, DIETS, type AllergenId, type Diet } from "./allergens";
 
 const KEY = "pantry-prep-v1";
 export const BACKUP_FORMAT = "pantry-prep-backup";
@@ -27,6 +29,9 @@ export function defaultState(): AppState {
     items: EXAMPLE.map(([id, n]) => fromCat(id, n)),
     picked: ["r1", "r4", "r9"],
     kit: {},
+    allergies: [],
+    diet: "none",
+    onboarded: false,
   };
 }
 
@@ -56,6 +61,8 @@ export function sanitise(raw: unknown): AppState | null {
       portions: clamp(it.portions, 0, 100, 0),
       litres: clamp(it.litres, 0, 50, 0),
       count: Math.round(clamp(it.count, 1, 999, 1)),
+      ...(isIsoDate(it.bb) ? { bb: it.bb } : {}),
+      ...(typeof it.code === "string" && /^\d{8,14}$/.test(it.code) ? { code: it.code } : {}),
     }];
   });
   const kit: AppState["kit"] = {};
@@ -75,6 +82,11 @@ export function sanitise(raw: unknown): AppState | null {
     items,
     picked: Array.isArray(s.picked) ? s.picked.filter((x: unknown) => typeof x === "string").slice(0, 100) : [],
     kit,
+    allergies: Array.isArray(s.allergies) ? [...new Set(s.allergies.filter((a: unknown): a is AllergenId => typeof a === "string" && a in ALLERGENS))] as AllergenId[] : [],
+    diet: typeof s.diet === "string" && s.diet in DIETS ? (s.diet as Diet) : "none",
+    // Stores saved before onboarding existed belong to people already using the app.
+    onboarded: s.onboarded === undefined ? true : Boolean(s.onboarded),
+    ...(isIsoDate(s.kitChecked) ? { kitChecked: s.kitChecked } : {}),
   };
 }
 
