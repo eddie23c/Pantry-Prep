@@ -97,3 +97,47 @@ test("printable cards open with a stock list and QR code", async ({ page, contex
   await expect(popup.getByRole("heading", { name: "Our emergency store" })).toBeVisible();
   await expect(popup.getByRole("img", { name: /QR code/ })).toBeVisible();
 });
+
+test("photo scan asks for an API key, and the key can be saved and removed", async ({ page }) => {
+  await onboard(page);
+  await page.getByRole("button", { name: "Add food" }).click();
+  await page.getByRole("tab", { name: "Scan a photo" }).click();
+  await page.getByRole("button", { name: "Add API key" }).click();
+  await expect(page.getByLabel("Anthropic API key")).toBeFocused();
+  await page.getByLabel("Anthropic API key").fill("not-a-key");
+  await page.getByRole("button", { name: "Save key" }).click();
+  await expect(page.getByText("doesn't look like an Anthropic API key")).toBeVisible();
+  await page.getByLabel("Anthropic API key").fill("sk-ant-" + "x".repeat(30));
+  await page.getByRole("button", { name: "Save key" }).click();
+  await expect(page.locator("#key-card")).toContainText("Key saved");
+  await page.getByRole("button", { name: "Add food" }).click();
+  await page.getByRole("tab", { name: "Scan a photo" }).click();
+  await expect(page.getByText("Photograph your shelves and kit")).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+  await page.locator("#key-card").getByRole("button", { name: "Remove" }).click();
+  await expect(page.locator("#key-card")).toContainText("Off");
+});
+
+test("clear the example store, then back up and restore", async ({ page }) => {
+  await onboard(page, { example: true });
+  await tab(page, "Prepare");
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Save a backup file" }).click()]);
+  const file = await download.path();
+  await tab(page, "Store");
+  await page.getByRole("button", { name: "Clear example" }).click();
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(page.locator("#screen-store [data-item]")).toHaveCount(0);
+  await tab(page, "Prepare");
+  await page.locator("#restore-input").setInputFiles(file);
+  await expect(page.getByRole("status")).toHaveText("Store restored from backup");
+  await tab(page, "Store");
+  await expect(page.locator("#screen-store [data-item]").first()).toBeVisible();
+});
+
+test("tick a kit item by hand and it survives a reload", async ({ page }) => {
+  await onboard(page);
+  await tab(page, "Prepare");
+  await page.getByLabel("Torch (battery or wind-up)").check();
+  await page.reload();
+  await expect(page.getByLabel("Torch (battery or wind-up)")).toBeChecked();
+});

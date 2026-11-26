@@ -39,12 +39,12 @@ It installs to the home screen and works offline after the first visit.
 | `src/data.ts` | Food catalogue, recipes, Be Ready kit list, guidance links |
 | `src/calc.ts` | Targets, totals, days covered, shopping list, recipe matching (tested) |
 | `src/storage.ts` | On-device storage, backup and restore (tested) |
-| `src/main.ts` | Screens and interactions, ported from the prototype |
+| `src/main.tsx`, `src/ui/` | React screens and sheets. `appState.tsx` holds the saved store, open tab and sheet |
 | `src/dates.ts` | Best-before dates and kit check reminders (tested) |
 | `src/barcode.ts`, `src/off.ts` | Barcode scanning and the Open Food Facts lookup (mapping tested) |
 | `src/allergens.ts` | The 14 UK allergens, diets and recipe filtering (tested) |
-| `src/onboarding.ts` | Welcome screens and the allergy picker |
 | `src/print.ts` | The printable A4 store list and recipe cards (tested) |
+| `src/scan.ts`, `src/scanResult.ts` | Photo scanning with Claude, and turning replies into store items (tested) |
 | `src/legal.ts` | Privacy notice, terms and accessibility statement |
 | `e2e/` | Playwright end-to-end tests and axe accessibility checks |
 | `public/sw.js` | Offline support |
