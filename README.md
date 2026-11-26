@@ -27,7 +27,7 @@ npm run build      # production build in dist/
 
 ## Hosting
 
-Every push to `main` builds and deploys to GitHub Pages (free) through `.github/workflows/deploy.yml`. One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. The app is then at `https://eddie23c.github.io/pantry-prep/`.
+Every push to `main` builds and deploys to GitHub Pages (free) through `.github/workflows/deploy.yml`. One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**. The app is then at `https://eddie23c.github.io/Pantry-Prep/`.
 
 It installs to the home screen and works offline after the first visit.
 
