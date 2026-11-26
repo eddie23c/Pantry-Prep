@@ -4,6 +4,7 @@
 import "./styles.css";
 import * as C from "./calc";
 import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from "./data";
+import { getApiKey, looksLikeKey, MAX_PHOTOS, ScanError, scanWithApiKey, setApiKey, SCAN_MODEL } from "./scan";
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
 import { renderBarcodePane, stopBarcode } from "./barcode";
 import { buildPrintFile } from "./print";
@@ -188,7 +189,16 @@ function renderPrepare() {
     KIT.map(function (k) {
       var st = kitState(k), tag = st === "auto" ? '<span class="tag">From your store</span>' : st === "photo" ? '<span class="tag tag-photo">Seen in photo</span>' : "";
       return '<li><label for="kit-' + k.id + '"><input type="checkbox" id="kit-' + k.id + '" data-kit="' + k.id + '"' + (st ? " checked" : "") + (k.auto ? " disabled" : "") + '><span>' + esc(k.label) + tag + "</span></label></li>";
-    }).join("") + '</ul>' + kitCheckRow() + '<button class="btn block" data-scan-kit="1">Scan my kit with the camera</button></div>';
+        }).join("") + '</ul>' + kitCheckRow() + '<button class="btn block" data-scan-kit="1">Scan my kit with the camera</button></div>';
+  var key = getApiKey();
+  html += '<div class="card" id="key-card"><div class="card-head"><h2>Photo scanning</h2><span class="small muted">' + (key ? "On" : "Off") + '</span></div>' +
+    '<p class="small muted">Scanning uses Claude through your own Anthropic API key, so you pay Anthropic directly, roughly 4 to 6p per scan. The key is kept only on this device and is sent only to Anthropic. Photos go to Anthropic for the scan and are not stored by Pantry Prep.</p>' +
+    (key
+      ? '<div class="set-row"><div class="row-main"><span class="t">Key saved</span><span class="s num">sk-ant-…' + esc(key.slice(-4)) + '</span></div><button class="btn danger" id="key-remove">Remove</button></div>'
+      : '<label class="search" for="key-input"><input id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key (sk-ant-…)"></label>' +
+        '<button class="btn primary block" id="key-save">Save key</button>' +
+        '<p class="small muted">Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Set a monthly spend limit there to stay in control.</p>') +
+    '<p class="status" id="key-status" aria-live="polite"></p></div>';
   html += '<div class="card"><div class="card-head"><h2>Back up your store</h2></div>' +
     '<p class="small muted">Your store is kept only on this device. Save a backup file now and then, so you can restore it on a new phone.</p>' +
     '<button class="btn block" id="backup-btn">Save a backup file</button>' +
@@ -372,15 +382,21 @@ function kitCheckRow() {
 
 // ---------- Photo scan ----------
 var sampleP = (window.claude && window.claude.use) ? window.claude.use("sample").catch(function () { return null; }) : Promise.resolve(null);
-var scanAvail = null, maxImages = 4, files = [], ctl = null, scanned = [], scanMsg = "";
+var sampleAvail = null, maxImages = MAX_PHOTOS, files = [], ctl = null, scanned = [], scanMsg = "";
+function hasKey() { return !!getApiKey(); }
+function scanReady() { return hasKey() || sampleAvail === true; }
 sampleP.then(function (s) {
-  if (!s) { scanAvail = false; if (sheetKind === "add" && addMode === "scan") renderScanPane(); return; }
-  return s.limits().then(function (l) { scanAvail = !!(l && l.images); maxImages = (l && l.images && l.images.maxCount) || 4; }, function () { scanAvail = false; })
+  if (!s) { sampleAvail = false; if (sheetKind === "add" && addMode === "scan") renderScanPane(); return; }
+  return s.limits().then(function (l) { sampleAvail = !!(l && l.images); if (!hasKey() && l && l.images) maxImages = Math.min(MAX_PHOTOS, l.images.maxCount || MAX_PHOTOS); }, function () { sampleAvail = false; })
     .then(function () { if (sheetKind === "add" && addMode === "scan") renderScanPane(); });
 });
 function renderScanPane() {
   var b = $("sheet-body");
-  if (scanAvail === false) { b.innerHTML = '<div class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg><b>Photo scanning is coming soon.</b><span class="small muted">For now, add food from Search foods. Barcode scanning is planned next.</span></div>'; return; }
+  if (!scanReady()) {
+    b.innerHTML = '<div class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>' +
+      (sampleAvail === null ? "<b>Checking photo scanning…</b>" : '<b>Turn on photo scanning</b><span class="small muted">Photo scanning uses Claude. Add your own Anthropic API key once and it stays on this device.</span><button class="btn primary" data-go-key="1">Add API key</button>') + "</div>";
+    return;
+  }
   var html = '<div class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>' +
     "<b>Photograph your shelves and kit</b><span class=\"small muted\">Spread tins out with labels facing the camera. Torches, radios, batteries and first aid kits are ticked off your Be Ready list too. Up to " + maxImages + " photos at a time.</span>" +
     '<label class="file-label" for="photo-input">' + (files.length ? "Choose different photos" : "Take or choose photos") + '<input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" multiple></label>' +
@@ -428,21 +444,26 @@ function normalise(data) {
 function runScan() {
   ctl = new AbortController(); scanMsg = "This can take up to a minute."; renderScanPane();
   var myCtl = ctl;
-  sampleP.then(function (s) {
-    if (!s) return;
-    return s.json(scanPrompt(), { images: files, signal: myCtl.signal }).then(function (data) {
-      scanned = normalise(data);
-      var seen = kitFrom(data).filter(function (k) { return !state.kit[k.id]; });
-      seen.forEach(function (k) { state.kit[k.id] = "photo"; });
-      if (seen.length) { save(); renderAll(); }
-      var kitMsg = seen.length ? " Ticked off on your kit list: " + seen.map(function (k) { return k.label.split(" (")[0]; }).join(", ") + "." : "";
-      scanMsg = (scanned.length ? "Found " + plural(scanned.length, "food product", "food products") + ". Untick or fix anything wrong, then add." : "No food found in these photos.") + kitMsg;
-    }, function (err) {
-      var c = err && err.code;
-      scanMsg = { cancelled: "Stopped.", not_granted: "Photo scanning needs your permission to use Claude. You can still search foods.", rate_limited: "Too many scans just now. Try again in a few minutes.",
-        image_rejected: "One photo could not be read. Use a JPEG or PNG under 20 MB.", invalid_json: "The scan came back in an unexpected format. Try again.", refused: "That photo could not be scanned. Try another." }[c] || "The scan did not finish. Check your connection and try again.";
-      if (c === "not_granted" || c === "sampling_disabled") scanAvail = false;
-    });
+  var job = hasKey()
+    ? scanWithApiKey(files, myCtl.signal)
+    : sampleP.then(function (s) { if (!s) throw { code: "not_granted" }; return s.json(scanPrompt(), { images: files, signal: myCtl.signal }); });
+  Promise.resolve(job).then(function (data) {
+    scanned = normalise(data);
+    var seen = kitFrom(data).filter(function (k) { return !state.kit[k.id]; });
+    seen.forEach(function (k) { state.kit[k.id] = "photo"; });
+    if (seen.length) { save(); renderAll(); }
+    var kitMsg = seen.length ? " Ticked off on your kit list: " + seen.map(function (k) { return k.label.split(" (")[0]; }).join(", ") + "." : "";
+    scanMsg = (scanned.length ? "Found " + plural(scanned.length, "food product", "food products") + ". Untick or fix anything wrong, then add." : "No food found in these photos.") + kitMsg;
+  }, function (err) {
+    var c = myCtl.signal.aborted ? "cancelled" : err && err.code;
+    if (err instanceof ScanError) {
+      scanMsg = { no_key: "Add your API key on the Prepare tab first.", bad_key: "Your API key was not accepted. Check it on the Prepare tab.", rate_limited: "Too many scans just now. Try again in a minute.",
+        refused: "Claude could not scan these photos. Try different ones.", network: "No connection. Photo scanning needs the internet, but you can still add food by hand." }[c] || ("The scan did not finish: " + err.message);
+      return;
+    }
+    scanMsg = { cancelled: "Stopped.", not_granted: "Photo scanning needs your permission to use Claude. You can still search foods.", rate_limited: "Too many scans just now. Try again in a few minutes.",
+      image_rejected: "One photo could not be read. Use a JPEG or PNG under 20 MB.", invalid_json: "The scan came back in an unexpected format. Try again.", refused: "That photo could not be scanned. Try another." }[c] || "The scan did not finish. Check your connection and try again.";
+    if (c === "not_granted" || c === "sampling_disabled") sampleAvail = false;
   }).then(function () { if (ctl === myCtl) ctl = null; if (sheetKind === "add" && addMode === "scan") renderScanPane(); });
 }
 
@@ -538,6 +559,13 @@ document.addEventListener("click", function (e) {
     scanned = []; files = []; scanMsg = ""; changed(); closeSheet(); go("store"); toast("Added " + plural(n, "item", "items") + " from your photos"); return;
   }
   if (el.id === "download-btn") { download(); return; }
+  if (d.goKey) { closeSheet(); go("prepare"); var kc = $("key-card"); if (kc) { kc.scrollIntoView({ block: "start" }); var ki = $("key-input"); if (ki) ki.focus(); } return; }
+  if (el.id === "key-save") {
+    var v = ($("key-input").value || "").trim();
+    if (!looksLikeKey(v)) { $("key-status").textContent = "That doesn't look like an Anthropic API key. It starts with sk-ant-."; return; }
+    setApiKey(v); renderPrepare(); toast("Photo scanning is on"); return;
+  }
+  if (el.id === "key-remove") { setApiKey(""); renderPrepare(); toast("API key removed from this device"); return; }
   if (el.id === "backup-btn") {
     var name = "pantry-prep-backup-" + new Date().toISOString().slice(0, 10) + ".json";
     Promise.resolve(saveFile(name, toBackup(state), "application/json")).then(function () { $("backup-status").textContent = "Backup saved as " + name + "."; },
