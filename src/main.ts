@@ -6,6 +6,7 @@ import * as C from "./calc";
 import { CAT, CATALOGUE, GROUPS, GROUP_ORDER, KINDS, KIT, LINKS, RECIPES } from "./data";
 import { defaultState, fromBackup, fromCat, load, save as saveState, toBackup, uid } from "./storage";
 import { renderBarcodePane, stopBarcode } from "./barcode";
+import { buildPrintFile } from "./print";
 import { ALLERGENS, recipeAllergens, unsuitable } from "./allergens";
 import { allergyPickerHTML, allergySummary, applyPickerClick, showOnboarding } from "./onboarding";
 import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDue, todayIso } from "./dates";
@@ -426,34 +427,10 @@ function runScan() {
 
 // ---------- Print file ----------
 function pickedRecipes() { return RECIPES.filter(function (r) { return state.picked.indexOf(r.id) >= 0; }); }
-function cardHTML(r) {
-  return '<div class="card"><div class="band"><span>' + (r.cook ? "Stove" + (r.water ? " · " + r.water + " L water" : "") : "No cook") + "</span><span>Serves " + r.serves + "</span></div><h3>" + esc(r.title) + "</h3><b>You need</b><ul>" +
-    r.ings.map(function (i) { return "<li>" + esc(ingLabel(i)) + ": " + esc(i.q) + (i.opt ? " (optional)" : "") + "</li>"; }).join("") + "</ul><b>Method</b><ol>" +
-    r.steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ol></div>";
-}
-function buildPrintFile() {
-  var p = pickedRecipes(), t = totals(), tg = targets(), pages = [];
-  var today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  for (var i = 0; i < p.length; i += 4) pages.push(p.slice(i, i + 4));
-  var rows = state.items.map(function (it) { return "<tr><td>" + esc(it.name) + "</td><td>" + esc(it.pack || "") + "</td><td>" + esc(it.count) + "</td><td>" + (it.bb ? esc(formatDate(it.bb)) : "&nbsp;") + "</td></tr>"; }).join("");
-  return '<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>Pantry Prep cards</title><style>' +
-    "@page{size:A4;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:10.5pt}" +
-    ".sheet{width:190mm;height:277mm;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6mm;break-after:page;page-break-after:always}" +
-    ".card{border:1.5pt dashed #333;border-radius:3mm;padding:5mm;overflow:hidden}.band{background:#0e7a62;color:#fff;margin:-5mm -5mm 3mm;padding:2mm 5mm;font-weight:bold;font-size:8.5pt;letter-spacing:.06em;text-transform:uppercase;display:flex;justify-content:space-between;border-radius:3mm 3mm 0 0}" +
-    "h3{font-size:14pt;margin:0 0 2mm}ul,ol{margin:1mm 0 3mm;padding-left:5mm}li{margin-bottom:.8mm}.cover{break-after:page;page-break-after:always}" +
-    "table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}h1{font-size:20pt;margin:0 0 2mm}.note{color:#444;font-size:9pt}" +
-    "@media screen{body{padding:10mm;background:#ddd}.sheet,.cover{background:#fff;margin:0 auto 10mm;padding:10mm;box-sizing:content-box}.tip{max-width:190mm;margin:0 auto 6mm;background:#e3f4ee;padding:4mm;border:1px solid #0e7a62}}@media print{.tip{display:none}}" +
-    '</style></head><body><div class="tip">Print this page on A4 (File, then Print). Cut along the dashed lines and keep the cards with your food store.</div>' +
-    '<div class="cover"><h1>Emergency food store</h1><p>Checked on ' + esc(today) + ". Covers " + plural(state.house.adults, "adult", "adults") + " and " + plural(state.house.children, "child", "children") + " for " + plural(state.house.days, "day", "days") + ".</p>" +
-    "<p>Food: about " + fmt(t.kcal) + " of " + fmt(tg.kcal) + " kcal needed. Water: " + fmt(t.water) + " of " + fmt(tg.water) + " L needed (3 L per person per day for drinking).</p>" +
-    "<table><thead><tr><th>Item</th><th>Pack</th><th>Count</th><th>Best before</th></tr></thead><tbody>" + rows + "</tbody></table>" +
-    '<p class="note">UK Government advice: beready.campaign.gov.uk. Eat and replace items before their best-before date.</p></div>' +
-    pages.map(function (pg) { return '<div class="sheet">' + pg.map(cardHTML).join("") + "</div>"; }).join("") + "</body></html>";
-}
 var downloadsP = (window.claude && window.claude.use) ? window.claude.use("downloads").catch(function () { return null; }) : Promise.resolve(null);
 function download() {
   var st = $("download-status"); st.textContent = "Preparing your cards…";
-  var html = buildPrintFile();
+  var html = buildPrintFile(state, new URL("./", location.href).href);
   downloadsP.then(function (dl) {
     if (!dl) {
       // Normal browser: open the printable page in a new tab, or save it if pop-ups are blocked.
