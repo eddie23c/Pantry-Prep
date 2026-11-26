@@ -63,7 +63,7 @@ export const LEGAL: Record<LegalPage, { title: string; html: string }> = {
 <li>works with screen readers, with labels on buttons, rings and charts</li>
 <li>can be used with a keyboard alone</li>
 <li>follows your phone's text size, dark mode and reduced motion settings</li>
-<li>has touch targets at least 44 pixels across for the main controls</li>
+<li>has buttons large enough to tap easily, at least 24 pixels across</li>
 <li>prints in large black and white type</li>
 </ul>
 <h3>Known limits</h3>

@@ -14,6 +14,8 @@ import { expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, kitCheckDu
 
 // ---------- Colours and labels per group ----------
 var GCOL = { water: "var(--water)", fruitveg: "var(--fibre)", starchy: "var(--warn)", protein: "var(--protein)", dairy: "var(--water)", oils: "var(--energy)", other: "var(--muted)" };
+// Darker text versions of GCOL, for numbers and labels on tinted chips (contrast 4.5:1).
+var GINK = { water: "var(--water-ink)", fruitveg: "var(--fibre-ink)", starchy: "var(--warn-ink)", protein: "var(--protein-ink)", dairy: "var(--water-ink)", oils: "var(--energy-ink)", other: "var(--muted)" };
 var GSHORT = { water: "H₂O", fruitveg: "FV", starchy: "SC", protein: "PR", dairy: "DA", oils: "OI", other: "EX" };
 
 function addItem(item) {
@@ -87,7 +89,7 @@ function renderHome() {
     '<p class="small muted">' + (pct >= 1 ? "Food and water both last the full " + plural(h.days, "day", "days") + "." : "Your " + limiter + " runs out first. Food lasts " + foodDays.toFixed(1) + " days, water " + waterDays.toFixed(1) + " days.") + "</p>" +
     '<div class="equation num"><div class="t"><span class="v">' + fmt(tg.kcal) + '</span><span class="k">Needed kcal</span></div><span class="op">−</span>' +
     '<div class="t"><span class="v">' + fmt(t.kcal) + '</span><span class="k">In store</span></div><span class="op">=</span>' +
-    '<div class="t"><span class="v" style="color:' + (togo ? "var(--energy)" : "var(--fibre)") + '">' + fmt(togo) + '</span><span class="k">To go</span></div></div></div>';
+    '<div class="t"><span class="v" style="color:' + (togo ? "var(--energy-ink)" : "var(--fibre-ink)") + '">' + fmt(togo) + '</span><span class="k">To go</span></div></div></div>';
 
   var minis = [
     { n: "Water", have: t.water, need: tg.water, u: "L", c: "var(--water)" },
@@ -112,7 +114,7 @@ function renderHome() {
   html += '<div class="card"><div class="card-head"><h2>Top up</h2><span class="small muted">' + (shop.length ? "Tap + when bought" : "") + '</span></div><div class="rows">' +
     (shop.length ? shop.map(function (s) {
       var c = CAT[s.id];
-      return '<div class="row-item"><div class="dot num" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 16%,transparent);color:' + GCOL[c.group] + '">' + s.n + '×</div>' +
+      return '<div class="row-item"><div class="dot num" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 16%,transparent);color:' + GINK[c.group] + '">' + s.n + '×</div>' +
         '<div class="row-main"><span class="t">' + esc(c.name) + '</span><span class="s">' + esc(c.pack) + " · " + esc(s.why) + '</span></div>' +
         '<button class="add-round" data-buy="' + s.id + '" data-n="' + s.n + '" aria-label="Mark ' + esc(c.name) + ' as bought">+</button></div>';
     }).join("") : '<p class="empty-line">Nothing essential to buy. Your store covers every target.</p>') + "</div></div>";
@@ -141,8 +143,8 @@ function renderStore() {
     if (!list.length) html += '<p class="empty-line">Nothing here yet.</p>';
     list.forEach(function (it) {
       var right = g === "water" ? fmt(it.litres * it.count) + " L" : fmt(it.kcal * it.count) + " kcal";
-      html += '<div class="row-item" data-uid="' + esc(it.uid) + '"><div class="dot" style="background:color-mix(in srgb,' + GCOL[g] + ' 15%,transparent);color:' + GCOL[g] + '">' + GSHORT[g] + '</div>' +
-        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '" aria-label="' + esc(it.name) + ', details and best-before date"><span class="t">' + esc(it.name) + (it.cat || it.code ? "" : '<span class="tag">estimate</span>') + bbTag(it) + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></button>' +
+      html += '<div class="row-item" data-uid="' + esc(it.uid) + '"><div class="dot" style="background:color-mix(in srgb,' + GCOL[g] + ' 15%,transparent);color:' + GINK[g] + '">' + GSHORT[g] + '</div>' +
+        '<button class="row-main row-btn" data-item="' + esc(it.uid) + '"><span class="t">' + esc(it.name) + (it.cat || it.code ? "" : '<span class="tag">estimate</span>') + bbTag(it) + '</span><span class="s num">' + esc(it.pack || "") + (it.pack ? " · " : "") + right + '</span></button>' +
         '<div class="stepper"><button data-step="-1" aria-label="One fewer ' + esc(it.name) + '">−</button><span class="num">' + esc(it.count) + '</span><button data-step="1" aria-label="One more ' + esc(it.name) + '">+</button></div></div>';
     });
     html += '</div><div class="section-foot"><button class="link-btn" data-addgroup="' + g + '">+ Add ' + esc(GROUPS[g].label.toLowerCase()) + "</button></div></div>";
@@ -224,11 +226,13 @@ function openSheet(title, kind, arg) {
   sheetKind = kind; sheetArg = arg || null;
   $("sheet-h").textContent = title; $("sheet-extra").innerHTML = ""; $("sheet-body").innerHTML = "";
   $("scrim").hidden = false; $("sheet").hidden = false; document.body.style.overflow = "hidden";
+  document.querySelector(".app").inert = true; document.querySelector(".tabbar").inert = true;
   setTimeout(function () { $("sheet-close").focus(); }, 30);
 }
 function closeSheet() {
   if (ctl) ctl.abort();
   stopBarcode(); delete $("sheet-body").dataset.pane;
+  document.querySelector(".app").inert = false; document.querySelector(".tabbar").inert = false;
   sheetKind = null; sheetArg = null; $("scrim").hidden = true; $("sheet").hidden = true; document.body.style.overflow = "";
   if (lastFocus && lastFocus.focus) lastFocus.focus();
 }
@@ -260,7 +264,7 @@ function renderResults() {
   var res = CATALOGUE.filter(function (c) { return (addGroup === "all" || c.group === addGroup) && (!q || (c.name + " " + c.pack + " " + KINDS[c.kind]).toLowerCase().indexOf(q) >= 0); });
   var counts = {}; state.items.forEach(function (it) { if (it.cat) counts[it.cat] = (counts[it.cat] || 0) + it.count; });
   $("food-results").innerHTML = res.length ? res.map(function (c) {
-    return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 15%,transparent);color:' + GCOL[c.group] + '">' + GSHORT[c.group] + '</div>' +
+    return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,' + GCOL[c.group] + ' 15%,transparent);color:' + GINK[c.group] + '">' + GSHORT[c.group] + '</div>' +
       '<div class="row-main"><span class="t">' + esc(c.name) + '</span><span class="s num">' + esc(c.pack) + " · " + (c.group === "water" ? c.litres + " L" : fmt(c.kcal) + " kcal") + (counts[c.id] ? " · " + counts[c.id] + " in store" : "") + '</span></div>' +
       '<button class="add-round" data-quick="' + c.id + '" aria-label="Add one ' + esc(c.name) + '">+</button></div>';
   }).join("") : '<p class="empty-line">No match. Try another word, or scan a photo instead.</p>';
@@ -340,7 +344,7 @@ function useSoonCard() {
     '<p class="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up.</p><div class="rows">' +
     list.slice(0, 5).map(function (it) {
       var st = expiryStatus(it.bb, todayIso());
-      return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,var(--' + (st === "expired" ? "bad" : "warn") + ') 15%,transparent);color:var(--' + (st === "expired" ? "bad" : "warn") + ')" aria-hidden="true">!</div>' +
+      return '<div class="row-item"><div class="dot" style="background:color-mix(in srgb,var(--' + (st === "expired" ? "bad" : "warn") + ') 15%,transparent);color:var(--' + (st === "expired" ? "bad" : "warn") + '-ink)" aria-hidden="true">!</div>' +
         '<button class="row-main row-btn" data-item="' + esc(it.uid) + '"><span class="t">' + esc(it.name) + '</span><span class="s">' + esc(expiryPhrase(it.bb, todayIso())) + "</span></button><span></span></div>";
     }).join("") + (list.length > 5 ? '<p class="empty-line">And ' + (list.length - 5) + ' more in your store.</p>' : "") + "</div></div>";
 }
