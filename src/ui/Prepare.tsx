@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import * as C from "../calc";
 import type { House } from "../calc";
 import { LINKS } from "../data";
-import { checkReminderIcs, formatDate, kitCheckDue, nextCheck, todayIso } from "../dates";
+import { checkReminderIcs, expiring, formatDate, kitCheckDue, nextCheck, todayIso, useBy } from "../dates";
 import { buildPrintFile } from "../print";
 import { getApiKey, looksLikeKey, SCAN_URL, setApiKey } from "../scan";
 import { TesterCard } from "./Compare";
@@ -11,6 +11,8 @@ import { allergySummary } from "./AllergyPicker";
 import { pickedRecipes, plural, sortedRecipes, Stepper } from "./common";
 import { openPrintable, saveFile } from "./files";
 import { useApp } from "./appState";
+import { reminderPlan, useByIcs } from "../native/reminders";
+import { isNativeApp } from "../native/platform";
 
 function HouseRow({ k, label, sub }: { k: keyof House; label: string; sub: string }) {
   const { state, update } = useApp();
@@ -75,6 +77,41 @@ function KitCard() {
       }}>Add next check to my calendar</button>
       <p className="status" aria-live="polite">{calStatus}</p>
       <button className="btn block" onClick={() => openSheet({ kind: "add", mode: "scan" })}>Photograph my kit</button>
+    </div>
+  );
+}
+
+/** Use-and-replace reminders: automatic on iPhone, a calendar file on the web (no server needed). */
+function UseByCard() {
+  const { state, go } = useApp();
+  const [status, setStatus] = useState("");
+  const today = todayIso();
+  const tracked = state.items.filter((it) => useBy(it));
+  const undated = state.items.length - tracked.length;
+  const estimated = tracked.filter((it) => useBy(it)!.estimated).length;
+  const plan = reminderPlan(state, today).filter((r) => r.bb);
+  const e = expiring(state.items, today), now = e.expired.length + e.soon.length;
+  return (
+    <div className="card" id="useby-card">
+      <div className="card-head"><h2>Use-by reminders</h2><span className="small muted num">{plural(tracked.length, "item", "items")} tracked</span></div>
+      <p className="small muted">
+        We remind you 30 days before each best-before date, so you can eat it in a normal meal and buy a fresh one.
+        {estimated ? ` ${plural(estimated, "item has", "items have")} no date, so we estimate from the kind of food and when you added it.` : ""}
+        {undated ? ` ${plural(undated, "item has", "items have")} no date or estimate yet: open it in the Store tab to add one.` : ""}
+      </p>
+      {now > 0 && <button className="btn block" onClick={() => { go("home"); setTimeout(() => document.getElementById("use-soon")?.scrollIntoView({ block: "start" }), 50); }}>See {plural(now, "item", "items")} to use now</button>}
+      {isNativeApp() ? (
+        <p className="small">{plan.length ? `Your phone will remind you. Next: ${formatDate(plan[0].day)}.` : "Nothing to remind you about yet."}</p>
+      ) : (
+        <>
+          <button className="btn block" id="useby-cal-btn" disabled={state.example || !plan.length} onClick={() => {
+            saveFile("pantry-prep-use-by.ics", useByIcs(plan), "text/calendar").then(
+              () => setStatus(`Open the file to add ${plural(plan.length, "reminder", "reminders")} to your calendar, starting ${formatDate(plan[0].day)}. Add it again after you add food, and the dates update.`),
+              () => setStatus("The reminders could not be saved here."));
+          }}>Add use-by reminders to my calendar</button>
+          <p className="status" aria-live="polite">{status}</p>
+        </>
+      )}
     </div>
   );
 }
@@ -175,6 +212,7 @@ export function Prepare() {
         <p className="status" aria-live="polite">{dlStatus}</p>
       </div>
 
+      <UseByCard />
       <KitCard />
       <KeyCard />
 

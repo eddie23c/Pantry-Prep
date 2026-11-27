@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { addDays, checkReminderIcs, daysBetween, expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, KIT_CHECK_DAYS, kitCheckDue, nextCheck, todayIso } from "./dates";
+import { addDays, addMonths, checkReminderIcs, daysBetween, expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, KIT_CHECK_DAYS, kitCheckDue, nextCheck, shelfMonths, todayIso, useBy } from "./dates";
 import { fromCat } from "./storage";
 
 const today = "2026-11-26";
-const dated = (id: string, bb?: string) => ({ ...fromCat(id, 1), bb });
+const dated = (id: string, bb?: string, added?: string) => ({ ...fromCat(id, 1), bb, added });
 
 describe("dates", () => {
   it("accepts only real calendar days", () => {
@@ -34,13 +34,39 @@ describe("best before", () => {
   });
   it("lists the soonest first and skips undated items", () => {
     const e = expiring([dated("tuna", "2026-12-20"), dated("oats"), dated("pb", "2026-12-01"), dated("raisins", "2026-01-01")], today);
-    expect(e.expired.map((x) => x.cat)).toEqual(["raisins"]);
-    expect(e.soon.map((x) => x.cat)).toEqual(["pb", "tuna"]);
+    expect(e.expired.map((x) => x.item.cat)).toEqual(["raisins"]);
+    expect(e.soon.map((x) => x.item.cat)).toEqual(["pb", "tuna"]);
+  });
+  it("includes estimated dates, marked as estimates", () => {
+    // Oats keep about 9 months: added 2026-03-10 means about 2026-12-10, so soon.
+    const e = expiring([dated("oats", undefined, "2026-03-10"), dated("tuna", undefined, "2026-03-10")], today);
+    expect(e.soon).toEqual([expect.objectContaining({ date: "2026-12-10", estimated: true })]);
+    expect(e.soon[0].item.cat).toBe("oats");
   });
   it("describes the date in words", () => {
     expect(expiryPhrase("2026-11-27", today)).toBe("Best before tomorrow");
     expect(expiryPhrase("2026-11-20", today)).toBe("Past best before by 6 days");
     expect(expiryPhrase("2027-05-01", today)).toBe("Best before 1 May 2027");
+    expect(expiryPhrase("2026-12-06", today, true)).toBe("About 10 days left (estimated)");
+    expect(expiryPhrase("2026-11-01", today, true)).toMatch(/^Probably past its best/);
+  });
+});
+
+describe("estimated best before", () => {
+  it("prefers the date from the pack", () => {
+    expect(useBy(dated("tuna", "2028-01-31", "2026-11-01"))).toEqual({ date: "2028-01-31", estimated: false });
+  });
+  it("estimates from the kind of food and the day it was added", () => {
+    expect(shelfMonths({ kind: "fish" })).toBe(24);
+    expect(shelfMonths({ kind: null })).toBe(6);
+    expect(useBy(dated("tuna", undefined, "2026-11-27"))).toEqual({ date: "2028-11-27", estimated: true });
+  });
+  it("has nothing to go on without either", () => {
+    expect(useBy(dated("tuna"))).toBeNull();
+  });
+  it("adds months without spilling into the next month", () => {
+    expect(addMonths("2027-01-31", 1)).toBe("2027-02-28");
+    expect(addMonths("2026-11-27", 18)).toBe("2028-05-27");
   });
 });
 

@@ -28,6 +28,8 @@ export interface StoreItem {
   bb?: string;
   /** Barcode, for items added by scanning one. */
   code?: string;
+  /** The day it was added to the store, "YYYY-MM-DD". Used to estimate a best-before date when none is entered. */
+  added?: string;
 }
 
 export interface AppState {
@@ -46,6 +48,8 @@ export interface AppState {
   onboarded: boolean;
   /** A baby or toddler lives here, so formula and nappies join the kit list. */
   baby?: boolean;
+  /** Items eaten up from the store that should be bought again. Shown at the top of the shopping list. */
+  restock?: StoreItem[];
 }
 
 // Per person per day. Water is the UK Government Be Ready figure for drinking.
@@ -185,4 +189,27 @@ export function kitFor(state: AppState): KitItem[] {
 
 export function kitDone(state: AppState): number {
   return kitFor(state).filter((k) => kitState(k, state)).length;
+}
+
+/** Takes an eaten-up item out of the store and puts it on the restock list, without its dates. */
+export function eatUp(s: AppState, uid: string) {
+  const it = s.items.find((x) => x.uid === uid);
+  if (!it) return;
+  s.items = s.items.filter((x) => x !== it);
+  const copy = { ...it };
+  delete copy.bb;
+  delete copy.added;
+  s.restock = [...(s.restock || []).filter((r) => r.uid !== uid), copy];
+}
+
+/** Undo for eatUp. */
+export function restoreEaten(s: AppState, it: StoreItem, at: number) {
+  if (!s.items.some((x) => x.uid === it.uid)) s.items.splice(Math.min(at, s.items.length), 0, it);
+  dropRestock(s, it.uid);
+}
+
+export function dropRestock(s: AppState, uid: string) {
+  if (!s.restock) return;
+  s.restock = s.restock.filter((r) => r.uid !== uid);
+  if (!s.restock.length) delete s.restock;
 }

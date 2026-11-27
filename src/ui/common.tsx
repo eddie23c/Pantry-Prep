@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { unsuitable } from "../allergens";
 import * as C from "../calc";
-import type { AppState, StoreItem } from "../calc";
+import { dropRestock, type AppState, type StoreItem } from "../calc";
 import { KINDS, RECIPES, type GroupId, type Ingredient, type Recipe } from "../data";
 import { useApp } from "./appState";
 import { reducedMotion } from "./feel";
@@ -103,6 +103,11 @@ export function RecipeCard({ r, s }: { r: Recipe; s: ReturnType<typeof C.recipeS
 /** Adds an item, merging with a matching row (same catalogue item, name and best-before date). */
 export function addItem(s: AppState, item: StoreItem) {
   const ex = item.cat && s.items.find((x) => x.cat === item.cat && x.name === item.name && (x.bb || "") === (item.bb || ""));
-  if (ex) ex.count += item.count;
+  if (ex) ex.count += item.count; // keeps the older added day, so an estimate never warns late
   else s.items.push(item);
+  // Buying something that was on the restock list ticks it off.
+  if (s.restock?.length) {
+    const i = s.restock.findIndex((r) => (item.cat ? r.cat === item.cat : r.name === item.name));
+    if (i >= 0) dropRestock(s, s.restock[i].uid);
+  }
 }

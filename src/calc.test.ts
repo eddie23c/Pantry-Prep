@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysCovered, kitFor, kitState, level, recipeStatus, shoppingList, targets, totals, type AppState } from "./calc";
+import { daysCovered, eatUp, kitFor, kitState, level, recipeStatus, restoreEaten, shoppingList, targets, totals, type AppState } from "./calc";
 import { KIT, RECIPES } from "./data";
 import { fromCat } from "./storage";
 
@@ -89,5 +89,21 @@ describe("kit fits the household", () => {
     expect(ids(state([], { house: { ...house, pets: 0 } }))).not.toContain("pets");
     expect(ids(state([], { house: { ...house, pets: 1 } }))).toContain("pets");
     expect(kitFor(state([], { baby: true, house: { ...house, pets: 1 } })).length).toBe(KIT.length);
+  });
+});
+
+describe("eat and replace", () => {
+  it("moves an eaten item to the restock list without its dates, and undo puts it back", async () => {
+    const { defaultState } = await import("./storage");
+    const s = defaultState();
+    const it = s.items[0];
+    it.bb = "2027-01-01";
+    eatUp(s, it.uid);
+    expect(s.items.some((x) => x.uid === it.uid)).toBe(false);
+    expect(s.restock).toEqual([expect.objectContaining({ uid: it.uid, name: it.name })]);
+    expect(s.restock![0].bb).toBeUndefined();
+    restoreEaten(s, it, 0);
+    expect(s.items[0].uid).toBe(it.uid);
+    expect(s.restock).toBeUndefined();
   });
 });

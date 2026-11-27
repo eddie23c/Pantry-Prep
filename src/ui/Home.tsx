@@ -1,35 +1,74 @@
 import * as C from "../calc";
 import { CAT, GROUPS } from "../data";
-import { expiring, expiryPhrase, expiryStatus, formatDate, kitCheckDue, todayIso } from "../dates";
-import { fromCat } from "../storage";
+import { expiring, expiryPhrase, formatDate, kitCheckDue, todayIso } from "../dates";
+import { fromCat, uid } from "../storage";
 import { addItem, CountUp, fmt, GCOL, GroupDot, LEVEL_WORD, plural, RecipeCard, Ring, sortedRecipes } from "./common";
 import { useApp } from "./appState";
 
 function UseSoon() {
-  const { state, openSheet } = useApp();
+  const { state, update, openSheet, toast } = useApp();
   const today = todayIso();
   const e = expiring(state.items, today), list = [...e.expired, ...e.soon];
   if (!list.length) return null;
+  const used = (uid: string) => {
+    const it = state.items.find((x) => x.uid === uid);
+    if (!it) return;
+    const at = state.items.indexOf(it);
+    update((s) => { C.eatUp(s, uid); });
+    toast(`${it.name} is on your shopping list`, { label: "Undo", run: () => update((s) => { C.restoreEaten(s, it, at); }) });
+  };
+  const fresh = (uid: string) => {
+    const it = state.items.find((x) => x.uid === uid);
+    if (!it) return;
+    update((s) => { const x = s.items.find((y) => y.uid === uid); if (x) { delete x.bb; x.added = today; } });
+    toast("Marked as fresh. Add the new date for an exact reminder", { label: "Add date", run: () => openSheet({ kind: "item", id: uid }) });
+  };
   return (
-    <div className="card">
+    <div className="card" id="use-soon">
       <div className="card-head"><h2>Eat and replace</h2><span className={`status-chip st-${e.expired.length ? "bad" : "warn"}`}>{plural(list.length, "item", "items")}</span></div>
-      <p className="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up.</p>
+      <p className="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up. Ate it? Tap Used and it goes on your shopping list.</p>
       <div className="rows">
-        {list.slice(0, 5).map((it) => {
-          const tone = expiryStatus(it.bb, today) === "expired" ? "bad" : "warn";
+        {list.slice(0, 6).map((d) => {
+          const tone = d.status === "expired" ? "bad" : "warn", it = d.item;
           return (
-            <div className="row-item" key={it.uid}>
+            <div className="row-item use-row" key={it.uid}>
               <div className="dot" aria-hidden="true" style={{ background: `color-mix(in srgb,var(--${tone}) 15%,transparent)`, color: `var(--${tone}-ink)` }}>!</div>
               <button className="row-main row-btn" data-item={it.uid} onClick={() => openSheet({ kind: "item", id: it.uid })}>
-                <span className="t">{it.name}</span><span className="s">{expiryPhrase(it.bb!, today)}</span>
+                <span className="t">{it.count > 1 ? `${it.count} × ` : ""}{it.name}</span><span className="s">{expiryPhrase(d.date, today, d.estimated)}</span>
               </button>
-              <span />
+              <div className="use-acts">
+                <button className="btn small-btn" aria-label={`Used ${it.name}, add to shopping list`} onClick={() => used(it.uid)}>Used</button>
+                <button className="btn small-btn" aria-label={`Replaced ${it.name} with a fresh one`} onClick={() => fresh(it.uid)}>Replaced</button>
+              </div>
             </div>
           );
         })}
-        {list.length > 5 && <p className="empty-line">And {list.length - 5} more in your store.</p>}
+        {list.length > 6 && <p className="empty-line">And {list.length - 6} more in your store.</p>}
       </div>
     </div>
+  );
+}
+
+function Restock() {
+  const { state, update, toast } = useApp();
+  const list = state.restock || [];
+  if (!list.length) return null;
+  return (
+    <>
+      {list.map((r) => (
+        <div className="row-item" key={"r" + r.uid}>
+          <GroupDot group={r.group} tint={16}><span className="num">{r.count}×</span></GroupDot>
+          <div className="row-main"><span className="t">{r.name}</span><span className="s">{r.pack ? `${r.pack} · ` : ""}Replaces what you used</span></div>
+          <div className="use-acts">
+            <button className="add-round" aria-label={`Mark ${r.name} as bought`} onClick={() => {
+              update((s) => { C.dropRestock(s, r.uid); s.items.push({ ...r, uid: uid(), added: todayIso() }); });
+              toast(`Logged ${r.count} × ${r.name}. Add its date from the Store tab`);
+            }}>+</button>
+            <button className="link-btn" aria-label={`Not replacing ${r.name}`} onClick={() => update((s) => { C.dropRestock(s, r.uid); })}>Skip</button>
+          </div>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -108,8 +147,9 @@ export function Home() {
       <UseSoon />
 
       <div className="card">
-        <div className="card-head"><h2>Top up</h2><span className="small muted">{shop.length ? "Tap + when bought" : ""}</span></div>
+        <div className="card-head"><h2>Top up</h2><span className="small muted">{shop.length || state.restock?.length ? "Tap + when bought" : ""}</span></div>
         <div className="rows">
+          <Restock />
           {shop.length ? shop.map((s) => {
             const c = CAT[s.id];
             return (
@@ -119,7 +159,7 @@ export function Home() {
                 <button className="add-round" aria-label={`Mark ${c.name} as bought`} onClick={() => { update((st) => addItem(st, fromCat(s.id, s.n))); toast(`Logged ${s.n} × ${c.name}`); }}>+</button>
               </div>
             );
-          }) : <p className="empty-line">{h.days === 3 ? "Three" : h.days} days, sorted. Your store covers every target.</p>}
+          }) : state.restock?.length ? null : <p className="empty-line">{h.days === 3 ? "Three" : h.days} days, sorted. Your store covers every target.</p>}
         </div>
       </div>
 

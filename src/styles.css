@@ -333,3 +333,11 @@ a { color: var(--brand); }
 .feedback-text { width: 100%; min-height: 140px; font: inherit; padding: 12px; border-radius: 12px; border: 1px solid var(--line, #ccc); background: var(--card, transparent); color: var(--ink); resize: vertical; box-sizing: border-box; }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .toggle-row input { width: 24px; height: 24px; accent-color: var(--brand); flex: none; }
+
+/* Eat and replace: Used / Replaced buttons beside each item */
+.use-acts { display: flex; gap: 6px; align-items: center; }
+.small-btn { padding: 6px 10px; font-size: .78rem; min-height: 36px; }
+@media (max-width: 380px) {
+  .use-row { grid-template-columns: auto 1fr; }
+  .use-row .use-acts { grid-column: 2; }
+}

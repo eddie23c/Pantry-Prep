@@ -40,14 +40,60 @@ export function expiryStatus(bb: string | undefined, today: string): ExpiryStatu
   return left < 0 ? "expired" : left <= SOON_DAYS ? "soon" : "ok";
 }
 
-/** Items past or near their best-before date, soonest first. */
+/**
+ * Typical months of shelf life left on a pack bought from a UK supermarket, by kind.
+ * Deliberately on the short side, so an estimate warns early rather than late.
+ */
+export const SHELF_MONTHS: Record<string, number> = {
+  fish: 24, meat: 24, beans: 18, pulses: 24, veg: 18, tomatoes: 18, potatoes: 18, fruit: 18, soup: 18,
+  driedfruit: 9, nuts: 6, nutbutter: 9, crackers: 6, oats: 9, cereal: 6, wraps: 2, pasta: 18, rice: 9,
+  noodles: 9, milk: 6, pudding: 12, oil: 12, honey: 24, snack: 6, water: 12, juice: 6,
+};
+/** For items with no known kind. */
+export const SHELF_DEFAULT_MONTHS = 6;
+
+export function shelfMonths(it: Pick<StoreItem, "kind">): number {
+  return (it.kind && SHELF_MONTHS[it.kind]) || SHELF_DEFAULT_MONTHS;
+}
+
+/** The calendar day `months` after `iso`, kept inside the month (31 Jan + 1 month = 28 Feb). */
+export function addMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
+  const dt = new Date(Date.UTC(y, m - 1 + months, Math.min(d, last)));
+  return dt.toISOString().slice(0, 10);
+}
+
+export interface UseBy {
+  date: string;
+  /** True when worked out from the kind of food and the day it was added, not read off the pack. */
+  estimated: boolean;
+}
+
+/** When an item should be eaten and replaced: its own best-before date, or an estimate. */
+export function useBy(it: Pick<StoreItem, "bb" | "added" | "kind">): UseBy | null {
+  if (it.bb && isIsoDate(it.bb)) return { date: it.bb, estimated: false };
+  if (it.added && isIsoDate(it.added)) return { date: addMonths(it.added, shelfMonths(it)), estimated: true };
+  return null;
+}
+
+export interface Due extends UseBy {
+  item: StoreItem;
+  status: ExpiryStatus;
+}
+
+/** Items past or near their best-before date (real or estimated), soonest first. */
 export function expiring(items: StoreItem[], today: string) {
-  const dated = items
-    .filter((it) => it.bb && isIsoDate(it.bb))
-    .sort((a, b) => (a.bb! < b.bb! ? -1 : a.bb! > b.bb! ? 1 : 0));
+  const due: Due[] = items
+    .flatMap((item): Due[] => {
+      const u = useBy(item);
+      const status = u && expiryStatus(u.date, today);
+      return u && status && status !== "ok" ? [{ item, ...u, status }] : [];
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return {
-    expired: dated.filter((it) => expiryStatus(it.bb, today) === "expired"),
-    soon: dated.filter((it) => expiryStatus(it.bb, today) === "soon"),
+    expired: due.filter((d) => d.status === "expired"),
+    soon: due.filter((d) => d.status === "soon"),
   };
 }
 
@@ -61,8 +107,13 @@ export function formatDate(iso: string): string {
 }
 
 /** Short human phrase for how far away a best-before date is. */
-export function expiryPhrase(bb: string, today: string): string {
+export function expiryPhrase(bb: string, today: string, estimated = false): string {
   const left = daysBetween(today, bb);
+  if (estimated) {
+    if (left < 0) return "Probably past its best. No date on record";
+    if (left <= SOON_DAYS) return `About ${left} ${left === 1 ? "day" : "days"} left (estimated)`;
+    return `Best before about ${formatDate(bb)} (estimated)`;
+  }
   if (left < -1) return `Past best before by ${-left} days`;
   if (left === -1) return "Past best before since yesterday";
   if (left === 0) return "Best before today";

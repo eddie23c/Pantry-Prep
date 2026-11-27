@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ALLERGENS, recipeAllergens } from "../allergens";
 import * as C from "../calc";
-import { APP_VERSION, FEEDBACK, RECIPES, type Recipe } from "../data";
-import { expiryPhrase, expiryStatus, isIsoDate, SOON_DAYS, todayIso } from "../dates";
+import { APP_VERSION, FEEDBACK, KINDS, RECIPES, type Recipe } from "../data";
+import { expiryPhrase, expiryStatus, formatDate, isIsoDate, shelfMonths, SOON_DAYS, todayIso, useBy } from "../dates";
 import { feedbackLink } from "../feedback";
 import { LEGAL, type LegalPage } from "../legal";
 import { AllergyPicker } from "./AllergyPicker";
@@ -88,7 +88,7 @@ export function ItemSheet({ id }: { id: string }) {
   const it = state.items.find((x) => x.uid === id);
   useEffect(() => { if (!it) closeSheet(); }, [it, closeSheet]);
   if (!it) return null;
-  const today = todayIso();
+  const today = todayIso(), u = useBy(it);
   const total = it.group === "water" ? `${fmt(it.litres * it.count)} L` : `${fmt(it.kcal * it.count)} kcal`;
   const edit = (fn: (x: C.StoreItem) => void) => update((s) => { const x = s.items.find((y) => y.uid === id); if (x) fn(x); });
   return (
@@ -108,7 +108,10 @@ export function ItemSheet({ id }: { id: string }) {
           <span className="s">Use the earliest date if your packs differ. We remind you {SOON_DAYS} days ahead.</span>
           <input type="date" id="bb-input" value={it.bb || ""} onChange={(e) => { const v = e.target.value; edit((x) => { if (isIsoDate(v)) x.bb = v; else delete x.bb; }); }} />
         </label>
-        {it.bb && <p className={`small ${expiryStatus(it.bb, today) === "ok" ? "muted" : "warn-text"}`}>{expiryPhrase(it.bb, today)}</p>}
+        {u && <p className={`small ${expiryStatus(u.date, today) === "ok" ? "muted" : "warn-text"}`}>{expiryPhrase(u.date, today, u.estimated)}</p>}
+        {u?.estimated && <p className="small muted">No date entered, so we estimate about {shelfMonths(it)} months for {it.kind && KINDS[it.kind] ? KINDS[it.kind].toLowerCase() : "this kind of food"} from when you added it on {formatDate(it.added!)}. Type the date from the pack for an exact reminder.</p>}
+        {!u && <p className="small muted">No date yet. Type the date from the pack, or tap Bought fresh if you just bought it, and we will remind you in good time.</p>}
+        <button className="btn block" id="fresh-btn" onClick={() => { edit((x) => { delete x.bb; x.added = today; }); toast("Marked as freshly bought"); }}>Bought fresh today</button>
       </div>
       <div className="card">
         <p className="small muted num">Per pack: {it.group === "water" ? `${fmt(it.litres)} L water` : `${fmt(it.kcal)} kcal, ${fmt(it.protein)} g protein, ${fmt(it.fibre)} g fibre`}.{it.cat ? " Typical UK label figure." : " Estimated, so check the pack."}</p>

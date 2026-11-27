@@ -12,6 +12,7 @@ export function scanPrompt(): string {
     "Work across each photo systematically (left to right, front to back) so nothing is missed. Read labels where you can; use the shape, colour and size of the pack where you cannot.",
     'If it is the same kind of product as a catalogue item below, set "id" to that catalogue id. Otherwise set "id" to "" and estimate nutrition for one pack from typical UK labels.',
     'Count every visible pack. If packs are stacked or partly hidden, give your best count and set confidence to "low". If you are unsure what a product is, still list it with your best guess and confidence "low".',
+    'If a best-before or use-by date is clearly legible on a pack, set "bb" to it as YYYY-MM-DD. If only a month and year are shown (for example "BB END 03 2027" or "03/27"), use the last day of that month. If packs of one product show different dates, use the earliest. If no date is readable, set "bb" to "". Never guess a date.',
     "Do not list the same product twice if it appears in more than one photo from the same angle; if photos clearly show different shelves, count each.",
     "",
     "Catalogue:",
@@ -35,7 +36,7 @@ export const SCAN_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "name", "pack", "count", "kind", "group", "kcal", "protein", "fibre", "litres", "portions", "confidence"],
+        required: ["id", "name", "pack", "count", "kind", "group", "kcal", "protein", "fibre", "litres", "portions", "bb", "confidence"],
         properties: {
           id: { type: "string" },
           name: { type: "string" },
@@ -48,6 +49,7 @@ export const SCAN_SCHEMA = {
           fibre: { type: "number" },
           litres: { type: "number" },
           portions: { type: "number" },
+          bb: { type: "string" },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
         },
       },

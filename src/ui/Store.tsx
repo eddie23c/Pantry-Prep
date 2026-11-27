@@ -2,14 +2,14 @@ import { useState } from "react";
 import * as C from "../calc";
 import type { StoreItem } from "../calc";
 import { GROUP_ORDER, GROUPS } from "../data";
-import { expiryStatus, todayIso } from "../dates";
+import { expiryStatus, todayIso, useBy } from "../dates";
 import { fmt, GCOL, GroupDot, GSHORT } from "./common";
 import { useApp } from "./appState";
 
 function BbTag({ it }: { it: StoreItem }) {
-  const st = expiryStatus(it.bb, todayIso());
+  const u = useBy(it), st = u && expiryStatus(u.date, todayIso());
   if (!st || st === "ok") return null;
-  return <span className={`tag tag-${st}`}>{st === "expired" ? "Past date" : "Use soon"}</span>;
+  return <span className={`tag tag-${st}`}>{st === "expired" ? (u.estimated ? "Check date" : "Past date") : "Use soon"}</span>;
 }
 
 export function Store() {

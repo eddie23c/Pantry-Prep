@@ -63,6 +63,42 @@ test("best-before date shows on the dashboard when it is close", async ({ page }
   await expect(page.getByRole("heading", { name: "Eat and replace" })).toBeVisible();
 });
 
+test("eat and replace: Used puts it on the shopping list, buying it brings it back", async ({ page }) => {
+  await onboard(page, { example: true });
+  await tab(page, "Store");
+  await page.locator("#screen-store [data-item]", { hasText: "Baked beans" }).click();
+  await expect(page.getByText(/No date entered, so we estimate about 18 months/)).toBeVisible();
+  const soon = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  await page.getByLabel("Best-before date").fill(soon);
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("#screen-store [data-item]", { hasText: "Baked beans" })).toContainText("Use soon");
+  await tab(page, "Dashboard");
+  await page.getByRole("button", { name: "Used Baked beans, add to shopping list" }).click();
+  await expect(page.getByRole("heading", { name: "Eat and replace" })).toHaveCount(0);
+  await expect(page.getByText("Replaces what you used")).toBeVisible();
+  await page.getByRole("button", { name: "Mark Baked beans as bought" }).click();
+  await expect(page.getByText("Replaces what you used")).toHaveCount(0);
+  await tab(page, "Store");
+  await expect(page.locator("#screen-store [data-item]", { hasText: "Baked beans" })).not.toContainText("Use soon");
+});
+
+test("web reminders: use-by dates go to a calendar file", async ({ page }) => {
+  await onboard(page);
+  await page.getByRole("button", { name: "Add food" }).click();
+  await page.getByRole("tab", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Add one Tuna chunks" }).click();
+  await page.getByRole("button", { name: "Close" }).click();
+  await tab(page, "Prepare");
+  await expect(page.locator("#useby-card")).toContainText("1 item tracked");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Add use-by reminders to my calendar" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("pantry-prep-use-by.ics");
+  const text = await (await file.createReadStream()).toArray().then((b) => Buffer.concat(b).toString());
+  expect(text).toContain("BEGIN:VEVENT");
+  expect(text).toContain("Tuna chunks in your store probably reaches best before");
+});
+
 test("allergies hide recipes that may contain them", async ({ page }) => {
   await onboard(page, { example: true });
   await tab(page, "Prepare");
@@ -122,6 +158,8 @@ test("photo scan: pile photo, invite code, review the list, add to store", async
   await expect(page.getByText("Found 3 products, 1 to check")).toBeVisible();
   expect(bodies.at(-1).images[0]).toMatch(/^\/9j\//);
   expect(bodies.at(-1).device).toMatch(/^[A-Za-z0-9-]{8,}$/);
+  await expect(page.getByText("and read 1 date")).toBeVisible();
+  await expect(page.getByLabel("Best-before date for Tuna chunks in spring water")).toHaveValue("2028-03-31");
   await page.getByRole("button", { name: "More Tuna chunks" }).click();
   await page.getByRole("checkbox", { name: "Keep Mystery tin" }).uncheck();
   await page.getByRole("button", { name: "Add 2 items to store" }).click();
