@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { onboard, tab } from "./helpers";
+import { CORS, onboard, PHOTO, SCAN_REPLY, tab } from "./helpers";
 
 // Automated WCAG 2.2 A and AA checks on every screen and sheet.
 async function check(page: Page) {
@@ -33,7 +33,15 @@ for (const scheme of ["light", "dark"] as const) {
 
     test("sheets", async ({ page }) => {
       await onboard(page, { example: true });
+      await page.route("https://scan.test/scan", (r) =>
+        r.request().method() === "OPTIONS" ? r.fulfill({ status: 204, headers: CORS }) : r.fulfill({ headers: CORS, json: { ...SCAN_REPLY, remaining: 9 } }));
       await page.getByRole("button", { name: "Add food" }).click();
+      await check(page);
+      await page.locator("#photo-input").setInputFiles(PHOTO);
+      await page.getByRole("button", { name: "Find food in 1 photo" }).click();
+      await expect(page.getByText("Found 3 products")).toBeVisible();
+      await check(page);
+      await page.getByRole("tab", { name: "Search" }).click();
       await check(page);
       await page.getByRole("tab", { name: "Barcode" }).click();
       await check(page);

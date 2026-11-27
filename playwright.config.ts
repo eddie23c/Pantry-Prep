@@ -15,7 +15,8 @@ export default defineConfig({
   },
   projects: [{ name: "phone", use: { ...devices["Pixel 7"], locale: "en-GB", timezoneId: "Europe/London" } }],
   webServer: {
-    command: "npm run build && npx vite preview --port 4173 --strictPort",
+    // Built with a pretend scan worker address; the tests answer its requests themselves.
+    command: "VITE_SCAN_URL=https://scan.test npm run build && npx vite preview --port 4173 --strictPort",
     url: "http://localhost:4173/",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
