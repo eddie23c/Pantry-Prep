@@ -2,7 +2,7 @@ import * as C from "../calc";
 import { CAT, GROUPS, KIT } from "../data";
 import { expiring, expiryPhrase, expiryStatus, formatDate, kitCheckDue, todayIso } from "../dates";
 import { fromCat } from "../storage";
-import { addItem, fmt, GCOL, GroupDot, LEVEL_WORD, plural, RecipeCard, Ring, sortedRecipes } from "./common";
+import { addItem, CountUp, fmt, GCOL, GroupDot, LEVEL_WORD, plural, RecipeCard, Ring, sortedRecipes } from "./common";
 import { useApp } from "./appState";
 
 function UseSoon() {
@@ -33,12 +33,19 @@ function UseSoon() {
   );
 }
 
+/** How close the nearest recipe is, so an empty list shows progress rather than a dead end. */
+function unlockLine(state: Parameters<typeof sortedRecipes>[0]) {
+  const gaps = sortedRecipes(state).map((x) => x.s.req - x.s.have).filter((n) => n > 0);
+  const n = gaps.length ? Math.min(...gaps) : 0;
+  return n ? `${n === 1 ? "One more basic" : `${n} more basics`} and your first recipe unlocks.` : "Add a few more basics and recipes will appear here.";
+}
+
 export function Home() {
   const { state, update, go, openSheet, toast } = useApp();
   const t = C.totals(state.items), tg = C.targets(state.house), h = state.house, people = C.people(h);
   const d = C.daysCovered(state);
   const pct = d.days / h.days, lv = C.level(pct);
-  const ringCol = lv === "ok" ? "var(--fibre)" : lv === "warn" ? "var(--warn)" : "var(--bad)";
+  const ringCol = lv === "ok" ? "var(--brass)" : lv === "warn" ? "#f5b65a" : "#f4946f";
   const togo = Math.max(0, tg.kcal - t.kcal);
   const minis = [
     { n: "Water", have: t.water, need: tg.water, u: "L", c: "var(--water)" },
@@ -58,7 +65,7 @@ export function Home() {
         <div className="card-head" style={{ width: "100%" }}><h2>Days covered</h2><span className={`status-chip st-${lv}`}>{LEVEL_WORD[lv]}</span></div>
         <div className="ring-wrap">
           <Ring pct={pct} color={ringCol} size={190} stroke={16} />
-          <div className="ring-center"><span className="big num">{d.days.toFixed(1)}</span><span className="lbl">of {plural(h.days, "day", "days")}</span></div>
+          <div className="ring-center"><span className="big num"><CountUp value={d.days} format={(n) => n.toFixed(1)} /></span><span className="lbl">of {plural(h.days, "day", "days")}</span></div>
         </div>
         <p className="small muted">{pct >= 1 ? `Food and water both last the full ${plural(h.days, "day", "days")}.` : `Your ${d.limiter} runs out first. Food lasts ${d.food.toFixed(1)} days, water ${d.water.toFixed(1)} days.`}</p>
         <div className="equation num">
@@ -75,7 +82,7 @@ export function Home() {
             const p = m.need ? m.have / m.need : 1;
             return (
               <div className="mini" key={m.n}>
-                <div className="ring-wrap"><Ring pct={p} color={m.c} size={84} stroke={9} /><div className="ring-center"><span className="big num">{Math.min(999, Math.round(p * 100))}%</span></div></div>
+                <div className="ring-wrap"><Ring pct={p} color={m.c} size={84} stroke={9} /><div className="ring-center"><span className="big num"><CountUp value={Math.min(999, p * 100)} format={(n) => `${Math.round(n)}%`} /></span></div></div>
                 <span className="name">{m.n}</span><span className="of num">{fmt(m.have)} / {fmt(m.need)} {m.u}</span>
               </div>
             );
@@ -112,7 +119,7 @@ export function Home() {
                 <button className="add-round" aria-label={`Mark ${c.name} as bought`} onClick={() => { update((st) => addItem(st, fromCat(s.id, s.n))); toast(`Logged ${s.n} × ${c.name}`); }}>+</button>
               </div>
             );
-          }) : <p className="empty-line">Nothing essential to buy. Your store covers every target.</p>}
+          }) : <p className="empty-line">{h.days === 3 ? "Three" : h.days} days, sorted. Your store covers every target.</p>}
         </div>
       </div>
 
@@ -126,7 +133,7 @@ export function Home() {
 
       <div className="card">
         <div className="card-head"><h2>Cook from your store</h2><button className="link-btn" onClick={() => go("recipes")}>See all</button></div>
-        {ready.length ? <div className="carousel">{ready.map((x) => <RecipeCard key={x.r.id} r={x.r} s={x.s} />)}</div> : <p className="empty-line">Add a few more basics and recipes will appear here.</p>}
+        {ready.length ? <div className="carousel">{ready.map((x) => <RecipeCard key={x.r.id} r={x.r} s={x.s} />)}</div> : <p className="empty-line">{unlockLine(state)}</p>}
       </div>
       <p className="small muted disclaimer">General guidance, not medical advice. <button className="link-btn" onClick={() => openSheet({ kind: "about" })}>How we count</button></p>
     </>
