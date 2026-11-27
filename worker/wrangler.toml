@@ -8,7 +8,8 @@ workers_dev = true
 [vars]
 # Which sites may call the worker (comma separated).
 ALLOWED_ORIGINS = "https://eddie23c.github.io,http://localhost:5173,http://localhost:4173"
-# Cheapest Claude model that does the job. Switch to claude-sonnet-5-5 if Haiku misses too much.
+# The model every everyday scan uses. To switch without editing this file, set the GitHub
+# repository variable SCAN_MODEL (e.g. claude-sonnet-5-5) and re-run "Deploy scan worker".
 SCAN_MODEL = "claude-haiku-5-5"
 SCAN_EFFORT = "medium"
 # Daily limits, counted in photos, reset at midnight UTC.
@@ -16,9 +17,14 @@ PHOTOS_PER_SCAN = "3"
 DEVICE_DAILY_PHOTOS = "12"
 IP_DAILY_PHOTOS = "36"
 TOTAL_DAILY_PHOTOS = "300"
+# Compare scans (testers only): one photo through each of these models side by side.
+COMPARE_MODELS = "claude-haiku-5-5,claude-sonnet-5-5,claude-opus-5-5"
+TESTER_DAILY_COMPARES = "20"
+TOTAL_DAILY_COMPARES = "40"
 # Secrets, set by the deploy workflow (never in this file):
 #   ANTHROPIC_API_KEY  - Eddie's key
 #   ACCESS_CODE        - optional invite code friends type once; leave unset for no code
+#   TESTER_CODE        - optional code that turns on compare scans for whoever knows it
 
 [[durable_objects.bindings]]
 name = "QUOTA"

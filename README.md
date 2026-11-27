@@ -40,14 +40,22 @@ The app sends shrunk photos (1,400 px, about 300 KB each, up to 3 per scan) to a
 
 **Limits** (in `worker/wrangler.toml`, counted in photos, reset at midnight UTC): 12 per phone, 36 per internet address, 300 for everyone together. An optional invite code keeps strangers out.
 
-**Cost:** about $0.002 (0.15p) per photo with Haiku 5.5, so 1,000 photos is roughly £1.50. The 300-a-day total cap means the most it can ever spend is about 60p a day. Cloudflare's free plan covers the worker. Set a monthly spend limit in the Anthropic console as a backstop. If Haiku misses too much, set `SCAN_MODEL = "claude-sonnet-5-5"` in `worker/wrangler.toml` (about 3p per photo).
+**Cost:** about $0.002 (0.15p) per photo with Haiku 5.5, so 1,000 photos is roughly £1.50. The 300-a-day total cap means the most it can ever spend is about 60p a day. Cloudflare's free plan covers the worker. Set a monthly spend limit in the Anthropic console as a backstop.
+
+**Choosing the model (accuracy first).** Testers can compare models on real photos before the beta settles on one:
+
+- Add a repository secret `SCAN_TESTER_CODE` and re-run **Deploy scan worker**. In the app, **Prepare → Photo scanning → Testing: compare scan models**, enter that code.
+- On the Photo tab, tick **Compare models on this photo**. One photo goes to Haiku 5.5, Sonnet 5.5 and Opus 5.5 at once (`COMPARE_MODELS` in `worker/wrangler.toml`). Each list shows items found, time and cost. Count what is really in the photo and pick the list that got closest; the pick adds that list to your store and to the tally.
+- **Show results so far** gives wins, average items found, time and cost per model, across every tester.
+- Rough cost per photo (about 3,300 tokens in, 3,000 out): Haiku 5.5 0.15p, Sonnet 5.5 3p, Opus 5.5 6p. A compare runs all three, about 9p. Limits: 20 compares a day per phone, 40 in total (`TESTER_DAILY_COMPARES`, `TOTAL_DAILY_COMPARES`).
+- **To switch the everyday model**, add a repository variable `SCAN_MODEL` (for example `claude-sonnet-5-5`) under **Settings → Secrets and variables → Actions → Variables**, then re-run **Deploy scan worker**. Delete the variable to go back to Haiku.
 
 **One-time setup:**
 
 1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com), open **Workers & Pages** once so it gives you a `workers.dev` address, and copy your **Account ID** from that page.
 2. In Cloudflare, **My Profile → API Tokens → Create Token → Edit Cloudflare Workers** template. Copy the token.
 3. In the [Anthropic console](https://console.anthropic.com), add $5 of credit, set a monthly limit (say $10), and create an API key.
-4. In this repository, **Settings → Secrets and variables → Actions → New repository secret**, add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ANTHROPIC_API_KEY` and, if you want an invite code, `SCAN_ACCESS_CODE`.
+4. In this repository, **Settings → Secrets and variables → Actions → New repository secret**, add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ANTHROPIC_API_KEY`, and optionally `SCAN_ACCESS_CODE` (invite code for friends) and `SCAN_TESTER_CODE` (turns on model comparison).
 5. **Actions → Deploy scan worker → Run workflow**. The run summary shows the worker's address.
 6. Under **Settings → Secrets and variables → Actions → Variables**, add `SCAN_URL` with that address, then run **Deploy to GitHub Pages** again.
 

@@ -148,6 +148,48 @@ test("photo scan: daily limit message, and search is one tap away", async ({ pag
   await expect(page.getByPlaceholder("Search tins, packets, water…")).toBeVisible();
 });
 
+test("tester: compare models on one photo, pick the most accurate, see the tally", async ({ page }) => {
+  const votes: string[] = [];
+  const run = (model: string, count: number, usd: number) => ({ model, ok: true, seconds: 9, usd, food: [{ ...SCAN_REPLY.food[0], count }], kit: [] });
+  await page.route("https://scan.test/*", async (r) => {
+    if (r.request().method() === "OPTIONS") return r.fulfill({ status: 204, headers: CORS });
+    const path = new URL(r.request().url()).pathname;
+    const body = r.request().postDataJSON();
+    expect(body.tester).toBe("taste");
+    if (path === "/compare") {
+      expect(body.images).toHaveLength(1);
+      return r.fulfill({ headers: CORS, json: { remaining: 19, results: [run("claude-haiku-5-5", 3, 0.0018), run("claude-opus-5-5", 5, 0.073), { model: "claude-sonnet-5-5", ok: false, error: "failed" }] } });
+    }
+    if (path === "/vote") votes.push(body.model);
+    return r.fulfill({ headers: CORS, json: { compares: 4, votes: 3, none: 1, models: [
+      { model: "claude-haiku-5-5", runs: 4, wins: 0, avgItems: 3, avgSeconds: 8, avgUsd: 0.0018 },
+      { model: "claude-opus-5-5", runs: 4, wins: 2, avgItems: 5.5, avgSeconds: 20, avgUsd: 0.07 },
+    ] } });
+  });
+  await onboard(page);
+  await tab(page, "Prepare");
+  await page.getByText("Testing: compare scan models").click();
+  await page.getByLabel("Tester code").fill("taste");
+  await page.getByRole("button", { name: "Turn on compare scans" }).click();
+  await page.getByRole("button", { name: "Add food" }).click();
+  await page.getByLabel("Compare models on this photo (tester)").check();
+  await page.locator("#photo-input").setInputFiles(PHOTO);
+  await page.getByRole("button", { name: "Compare models on this photo" }).click();
+  await expect(page.getByRole("region", { name: "Opus 5.5" })).toContainText("5 items");
+  await expect(page.getByRole("region", { name: "Opus 5.5" })).toContainText("≈5.8p");
+  await expect(page.getByRole("region", { name: "Sonnet 5.5" })).toContainText("did not answer");
+  await page.getByRole("button", { name: "Opus 5.5 was most accurate" }).click();
+  expect(votes).toEqual(["claude-opus-5-5"]);
+  await expect(page.getByText("Found 1 product")).toBeVisible();
+  await page.getByRole("button", { name: "Add 1 item to store" }).click();
+  await expect(page.locator("#screen-store [data-item]", { hasText: "Tuna chunks" })).toContainText("5");
+  await tab(page, "Prepare");
+  await page.getByText("Testing: compare scan models").click();
+  await page.getByRole("button", { name: "Show results so far" }).click();
+  await expect(page.getByRole("row", { name: /Opus 5\.5/ })).toContainText("5.5");
+  await expect(page.getByText("4 compares, 3 picks, 1 where none were right")).toBeVisible();
+});
+
 test("own API key can be saved and removed", async ({ page }) => {
   await onboard(page);
   await tab(page, "Prepare");

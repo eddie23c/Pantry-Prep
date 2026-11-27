@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderBarcodePane, stopBarcode } from "../barcode";
 import { CAT, CATALOGUE, GROUP_ORDER, GROUPS, KINDS } from "../data";
-import { getApiKey, getInviteCode, MAX_PHOTOS, SCAN_URL, ScanError, scanHosted, scanWithApiKey, setInviteCode } from "../scan";
+import { getApiKey, getInviteCode, getTesterCode, MAX_PHOTOS, SCAN_URL, ScanError, scanCompare, scanHosted, scanWithApiKey, sendVote, setInviteCode, modelLabel, type CompareRun } from "../scan";
+import { CompareResults } from "./Compare";
 import { kitFrom, normalise, samplePrompt, type ScannedItem } from "../scanResult";
 import { fromCat, uid } from "../storage";
 import { addItem, fmt, GroupDot, GSHORT, plural } from "./common";
@@ -97,6 +98,7 @@ const KEY_ERRORS: Record<string, string> = {
   busy: "Photo scanning is full for today. Try again tomorrow, or search or scan barcodes for now.",
   too_big: `Up to ${MAX_PHOTOS} photos per scan.`, bad_code: "That invite code is not right. Check it and try again.",
   code_needed: "Enter the invite code you were given to start scanning.",
+  bad_tester: "Your tester code is not right. Check it on the Prepare tab.", compare_off: "Model comparison is not turned on in the scanner yet.",
 };
 const SAMPLE_ERRORS: Record<string, string> = {
   cancelled: "Stopped.", not_granted: "Photo scanning needs your permission to use Claude. You can still search foods.",
@@ -112,7 +114,10 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
   const hasKey = !!getApiKey();
   // Your own key wins if you saved one; otherwise the Pantry Prep scanner; otherwise Claude (inside a Claude artifact).
   const route: Route | null = hasKey ? "key" : SCAN_URL ? "hosted" : sample.ok ? "sample" : null;
-  const max = route === "sample" ? sample.max : MAX_PHOTOS;
+  const canCompare = route === "hosted" && !!getTesterCode();
+  const [compare, setCompare] = useState(false);
+  const [compared, setCompared] = useState<CompareRun[] | null>(null);
+  const max = compare ? 1 : route === "sample" ? sample.max : MAX_PHOTOS;
   const [files, setFiles] = useState<File[]>([]);
   const [scanned, setScanned] = useState<ScannedItem[] | null>(null);
   const [msg, setMsg] = useState("");
@@ -151,21 +156,19 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
     const ctl = new AbortController();
     setBusy(ctl); setNeedCode(false); setMsg("Looking for every tin, packet and bottle. This usually takes 10 to 30 seconds.");
     try {
+      if (compare) {
+        const r = await scanCompare(files[0], ctl.signal);
+        setLeft(null); setCompared(r.results);
+        setMsg(`Compared ${plural(r.results.length, "model", "models")}${r.remaining !== null ? ` · ${plural(r.remaining, "compare", "compares")} left today` : ""}.`);
+        return;
+      }
       let data: unknown;
       if (route === "hosted") {
         const r = await scanHosted(files, ctl.signal);
         data = r.data; setLeft(r.remaining);
       } else if (route === "key") data = await scanWithApiKey(files, ctl.signal);
       else data = await sampleP.then((s) => { if (!s) throw { code: "not_granted" }; return s.json(samplePrompt(), { images: files, signal: ctl.signal }); });
-      const items = normalise(data);
-      const seen = kitFrom(data).filter((k) => !state.kit[k.id]);
-      if (seen.length) update((s) => { for (const k of seen) s.kit[k.id] = "photo"; });
-      setScanned(items);
-      const unsure = items.filter((i) => i.conf === "low").length;
-      const kitMsg = seen.length ? ` Ticked off on your kit list: ${seen.map((k) => k.label.split(" (")[0]).join(", ")}.` : "";
-      setMsg((items.length
-        ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}. Fix names and counts, untick anything wrong, then add.`
-        : "No food found. Try a closer photo with labels facing the camera.") + kitMsg);
+      showResult(data);
     } catch (err: any) {
       const c = ctl.signal.aborted ? "cancelled" : err && err.code;
       if (err instanceof ScanError) {
@@ -177,6 +180,24 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
       setBusy(null);
     }
   };
+  function showResult(data: unknown) {
+    const items = normalise(data);
+    const seen = kitFrom(data).filter((k) => !state.kit[k.id]);
+    if (seen.length) update((s) => { for (const k of seen) s.kit[k.id] = "photo"; });
+    setScanned(items);
+    const unsure = items.filter((i) => i.conf === "low").length;
+    const kitMsg = seen.length ? ` Ticked off on your kit list: ${seen.map((k) => k.label.split(" (")[0]).join(", ")}.` : "";
+    setMsg((items.length
+      ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}. Fix names and counts, untick anything wrong, then add.`
+      : "No food found. Try a closer photo with labels facing the camera.") + kitMsg);
+  }
+  const pick = (model: string) => {
+    sendVote(model).catch(() => {});
+    const chosen = compared?.find((r) => r.model === model);
+    setCompared(null);
+    if (chosen) { showResult(chosen); toast(`Thanks. ${modelLabel(model)} noted as most accurate`); }
+    else { setFiles([]); setMsg("Thanks, noted. Try another photo, or search the food list."); }
+  };
   const list = scanned || [];
   const keep = list.filter((s) => s.keep).length;
   const edit = (i: number, fn: (s: ScannedItem) => void) => setScanned((all) => (all || []).map((s, n) => { if (n !== i) return s; const c = { ...s }; fn(c); return c; }));
@@ -184,13 +205,13 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
     const chosen = list.filter((s) => s.keep);
     update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count }); });
     toast(`Added ${plural(chosen.length, "item", "items")} from your photos`);
-    if (again) { setFiles([]); setScanned(null); setMsg("Added. Photograph the next shelf or pile."); }
+    if (again) { setFiles([]); setScanned(null); setCompared(null); setMsg("Added. Photograph the next shelf or pile."); }
     else { closeSheet(); go("store"); }
   };
 
   return (
     <>
-      {!scanned && (
+      {!scanned && !compared && (
         <div className="drop">{CAMERA_ICON}
           <b>Photograph a pile of food</b>
           <span className="small muted">Pile it on a table or open the cupboard, labels facing you, and take one photo per shelf or pile. Claude finds every item and you check the list. Torches, radios and first aid kits are ticked off your Be Ready list too.</span>
@@ -210,7 +231,13 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
               </span>
             ))}</div>
           )}
-          <span className="small muted">Up to {max} photos per scan{route === "hosted" && left !== null ? ` · ${plural(left, "photo scan", "photo scans")} left today` : ""}.</span>
+          <span className="small muted">Up to {plural(max, "photo", "photos")} per scan{route === "hosted" && left !== null && !compare ? ` · ${plural(left, "photo scan", "photo scans")} left today` : ""}.</span>
+          {canCompare && (
+            <label className="compare-toggle small">
+              <input type="checkbox" checked={compare} onChange={(e) => { setCompare(e.target.checked); if (e.target.checked && files.length > 1) setFiles(files.slice(0, 1)); }} />
+              Compare models on this photo (tester)
+            </label>
+          )}
         </div>
       )}
       {needCode && (
@@ -221,13 +248,14 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
           <button className="btn primary block" type="submit" disabled={!!busy}>Save code and scan</button>
         </form>
       )}
-      {files.length > 0 && !scanned && !needCode && (
+      {files.length > 0 && !scanned && !compared && !needCode && (
         <>
-          <button className="btn primary block" disabled={!!busy} onClick={run}>{busy ? "Looking at your photos…" : `Find food in ${plural(files.length, "photo", "photos")}`}</button>
+          <button className="btn primary block" disabled={!!busy} onClick={run}>{busy ? "Looking at your photos…" : compare ? "Compare models on this photo" : `Find food in ${plural(files.length, "photo", "photos")}`}</button>
           {busy && <button className="btn block" onClick={() => busy.abort()}>Stop</button>}
         </>
       )}
       <p className="status" aria-live="polite">{msg}</p>
+      {compared && <CompareResults results={compared} onPick={pick} />}
       {scanned && (
         <>
           {list.length > 0 && (

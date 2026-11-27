@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowedOrigin, codeMatches, decideTake, parseScanRequest, type Limit } from "./rules";
+import { allowedOrigin, codeMatches, compareModels, costUsd, decideTake, parseScanRequest, type Limit } from "./rules";
 
 const jpeg = "/9j/4AAQSkZJRg";
 
@@ -34,5 +34,17 @@ describe("scan worker rules", () => {
     expect(decideTake({}, limits, 3)).toEqual({ ok: true, remaining: 9 });
     expect(decideTake({ "device:a": 10 }, limits, 3)).toEqual({ ok: false, error: "daily_limit", remaining: 2 });
     expect(decideTake({ total: 299 }, limits, 2)).toEqual({ ok: false, error: "busy", remaining: 12 });
+  });
+});
+
+describe("compare scans", () => {
+  it("prices a scan per model", () => {
+    expect(costUsd("claude-haiku-5-5", 3300, 3000)).toBeCloseTo(0.00183, 5);
+    expect(costUsd("claude-opus-5-5", 1_000_000, 0)).toBe(4);
+    expect(costUsd("mystery", 1, 1)).toBeNull();
+  });
+  it("reads the model list safely", () => {
+    expect(compareModels(undefined)).toEqual(["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
+    expect(compareModels("claude-haiku-5-5, claude-haiku-5-5, bad model, claude-fable-5-2")).toEqual(["claude-haiku-5-5", "claude-fable-5-2"]);
   });
 });

@@ -5,6 +5,7 @@ import { LINKS } from "../data";
 import { checkReminderIcs, formatDate, kitCheckDue, nextCheck, todayIso } from "../dates";
 import { buildPrintFile } from "../print";
 import { getApiKey, looksLikeKey, SCAN_URL, setApiKey } from "../scan";
+import { TesterCard } from "./Compare";
 import { fromBackup, toBackup } from "../storage";
 import { allergySummary } from "./AllergyPicker";
 import { pickedRecipes, plural, sortedRecipes, Stepper } from "./common";
@@ -109,6 +110,7 @@ export function KeyCard() {
           <p className="small muted">For unlimited scans. You pay Anthropic directly, roughly 4 to 6p per scan. The key stays on this device and is sent only to Anthropic.</p>
           {keyForm}
         </details>
+        <TesterCard />
         <p className="status" aria-live="polite">{status}</p>
       </div>
     );

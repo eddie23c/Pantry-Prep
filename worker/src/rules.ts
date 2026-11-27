@@ -61,3 +61,24 @@ export function decideTake(counts: Record<string, number>, limits: Limit[], n: n
   for (const l of limits) if (left(l) < n) return { ok: false, error: l.error, remaining: own };
   return { ok: true, remaining: own - n };
 }
+
+/** Standard API prices in US dollars per million tokens (input, output), for cost reporting. */
+export const PRICES: Record<string, [number, number]> = {
+  "claude-haiku-5-5": [0.1, 0.5],
+  "claude-sonnet-5-5": [2, 10],
+  "claude-opus-5-5": [4, 20],
+  "claude-fable-5-2": [8, 40],
+};
+
+export function costUsd(model: string, input: number, output: number): number | null {
+  const key = Object.keys(PRICES).find((k) => model.startsWith(k));
+  if (!key) return null;
+  const [i, o] = PRICES[key];
+  return (input * i + output * o) / 1e6;
+}
+
+/** The models a compare scan runs, from a comma-separated var. At most 4, known ids only. */
+export function compareModels(list: string | undefined): string[] {
+  const all = (list || "claude-haiku-5-5,claude-sonnet-5-5,claude-opus-5-5").split(",").map((s) => s.trim()).filter((m) => /^claude-[a-z0-9-]+$/.test(m));
+  return [...new Set(all)].slice(0, 4);
+}
