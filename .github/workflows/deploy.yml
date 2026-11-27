@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          # Address of the scan worker (repository variable). Empty keeps photo scanning on own keys only.
+          VITE_SCAN_URL: ${{ vars.SCAN_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

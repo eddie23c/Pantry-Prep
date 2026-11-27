@@ -1,13 +1,14 @@
-// The Add food sheet: search the food list, scan a barcode, or scan a photo with Claude.
+// The Add food sheet: photograph a pile of food (the main way), search the food list, or scan a barcode.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderBarcodePane, stopBarcode } from "../barcode";
 import { CAT, CATALOGUE, GROUP_ORDER, GROUPS, KINDS } from "../data";
-import { MAX_PHOTOS, ScanError, scanWithApiKey, getApiKey } from "../scan";
+import { getApiKey, getInviteCode, MAX_PHOTOS, SCAN_URL, ScanError, scanHosted, scanWithApiKey, setInviteCode } from "../scan";
 import { kitFrom, normalise, samplePrompt, type ScannedItem } from "../scanResult";
 import { fromCat, uid } from "../storage";
 import { addItem, fmt, GroupDot, GSHORT, plural } from "./common";
 import { Sheet } from "./Sheets";
 import { useApp, type AddMode } from "./appState";
+import "./scan.css";
 
 const CAMERA_ICON = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="3" /><circle cx="12" cy="13" r="3.5" /><path d="M8 6l1.5-2h5L16 6" /></svg>
@@ -92,6 +93,10 @@ const KEY_ERRORS: Record<string, string> = {
   no_key: "Add your API key on the Prepare tab first.", bad_key: "Your API key was not accepted. Check it on the Prepare tab.",
   rate_limited: "Too many scans just now. Try again in a minute.", refused: "Claude could not scan these photos. Try different ones.",
   network: "No connection. Photo scanning needs the internet, but you can still add food by hand.",
+  daily_limit: "That's all the photo scans for today on this phone. They reset at midnight. You can still search or scan barcodes.",
+  busy: "Photo scanning is full for today. Try again tomorrow, or search or scan barcodes for now.",
+  too_big: `Up to ${MAX_PHOTOS} photos per scan.`, bad_code: "That invite code is not right. Check it and try again.",
+  code_needed: "Enter the invite code you were given to start scanning.",
 };
 const SAMPLE_ERRORS: Record<string, string> = {
   cancelled: "Stopped.", not_granted: "Photo scanning needs your permission to use Claude. You can still search foods.",
@@ -99,20 +104,28 @@ const SAMPLE_ERRORS: Record<string, string> = {
   invalid_json: "The scan came back in an unexpected format. Try again.", refused: "That photo could not be scanned. Try another.",
 };
 
-function ScanPane() {
+type Route = "hosted" | "key" | "sample";
+
+function ScanPane({ onMissing }: { onMissing: () => void }) {
   const { state, update, closeSheet, go, toast } = useApp();
   const sample = useSampleAvailable();
   const hasKey = !!getApiKey();
-  const max = hasKey ? MAX_PHOTOS : sample.max;
+  // Your own key wins if you saved one; otherwise the Pantry Prep scanner; otherwise Claude (inside a Claude artifact).
+  const route: Route | null = hasKey ? "key" : SCAN_URL ? "hosted" : sample.ok ? "sample" : null;
+  const max = route === "sample" ? sample.max : MAX_PHOTOS;
   const [files, setFiles] = useState<File[]>([]);
-  const [scanned, setScanned] = useState<ScannedItem[]>([]);
+  const [scanned, setScanned] = useState<ScannedItem[] | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState<AbortController | null>(null);
+  const [left, setLeft] = useState<number | null>(null);
+  const [needCode, setNeedCode] = useState(false);
+  const codeInput = useRef<HTMLInputElement>(null);
   const urls = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
   useEffect(() => () => busy?.abort(), [busy]);
+  useEffect(() => { if (needCode) codeInput.current?.focus(); }, [needCode]);
 
-  if (!hasKey && sample.ok !== true) {
+  if (!route) {
     return (
       <div className="drop">{CAMERA_ICON}
         {sample.ok === null ? <b>Checking photo scanning…</b> : (
@@ -120,90 +133,138 @@ function ScanPane() {
             <b>Turn on photo scanning</b>
             <span className="small muted">Photo scanning uses Claude. Add your own Anthropic API key once and it stays on this device.</span>
             <button className="btn primary" onClick={() => { closeSheet(); go("prepare"); setTimeout(() => { document.getElementById("key-card")?.scrollIntoView({ block: "start" }); document.getElementById("key-input")?.focus(); }, 50); }}>Add API key</button>
+            <button className="btn" onClick={onMissing}>Search the food list instead</button>
           </>
         )}
       </div>
     );
   }
 
+  const addFiles = (list: FileList | null) => {
+    const picked = Array.from(list || []).filter((f) => f.type.startsWith("image/"));
+    const all = [...files, ...picked];
+    setFiles(all.slice(0, max)); setScanned(null);
+    setMsg(all.length > max ? `Up to ${max} photos per scan. Using the first ${max}.` : "");
+  };
+
   const run = async () => {
     const ctl = new AbortController();
-    setBusy(ctl); setMsg("This can take up to a minute.");
+    setBusy(ctl); setNeedCode(false); setMsg("Looking for every tin, packet and bottle. This usually takes 10 to 30 seconds.");
     try {
-      const data = hasKey ? await scanWithApiKey(files, ctl.signal) : await sampleP.then((s) => { if (!s) throw { code: "not_granted" }; return s.json(samplePrompt(), { images: files, signal: ctl.signal }); });
+      let data: unknown;
+      if (route === "hosted") {
+        const r = await scanHosted(files, ctl.signal);
+        data = r.data; setLeft(r.remaining);
+      } else if (route === "key") data = await scanWithApiKey(files, ctl.signal);
+      else data = await sampleP.then((s) => { if (!s) throw { code: "not_granted" }; return s.json(samplePrompt(), { images: files, signal: ctl.signal }); });
       const items = normalise(data);
       const seen = kitFrom(data).filter((k) => !state.kit[k.id]);
       if (seen.length) update((s) => { for (const k of seen) s.kit[k.id] = "photo"; });
       setScanned(items);
+      const unsure = items.filter((i) => i.conf === "low").length;
       const kitMsg = seen.length ? ` Ticked off on your kit list: ${seen.map((k) => k.label.split(" (")[0]).join(", ")}.` : "";
-      setMsg((items.length ? `Found ${plural(items.length, "food product", "food products")}. Untick or fix anything wrong, then add.` : "No food found in these photos.") + kitMsg);
+      setMsg((items.length
+        ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}. Fix names and counts, untick anything wrong, then add.`
+        : "No food found. Try a closer photo with labels facing the camera.") + kitMsg);
     } catch (err: any) {
       const c = ctl.signal.aborted ? "cancelled" : err && err.code;
-      if (err instanceof ScanError) setMsg(KEY_ERRORS[c] || `The scan did not finish: ${err.message}`);
-      else setMsg(SAMPLE_ERRORS[c] || "The scan did not finish. Check your connection and try again.");
+      if (err instanceof ScanError) {
+        if (err.remaining !== null) setLeft(err.remaining);
+        if (c === "code_needed" || c === "bad_code") setNeedCode(true);
+        setMsg(KEY_ERRORS[c] || `The scan did not finish: ${err.message}`);
+      } else setMsg(SAMPLE_ERRORS[c] || "The scan did not finish. Check your connection and try again.");
     } finally {
       setBusy(null);
     }
   };
-  const keep = scanned.filter((s) => s.keep).length;
-  const edit = (i: number, fn: (s: ScannedItem) => void) => setScanned((list) => list.map((s, n) => { if (n !== i) return s; const c = { ...s }; fn(c); return c; }));
+  const list = scanned || [];
+  const keep = list.filter((s) => s.keep).length;
+  const edit = (i: number, fn: (s: ScannedItem) => void) => setScanned((all) => (all || []).map((s, n) => { if (n !== i) return s; const c = { ...s }; fn(c); return c; }));
+  const addChosen = (again: boolean) => {
+    const chosen = list.filter((s) => s.keep);
+    update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count }); });
+    toast(`Added ${plural(chosen.length, "item", "items")} from your photos`);
+    if (again) { setFiles([]); setScanned(null); setMsg("Added. Photograph the next shelf or pile."); }
+    else { closeSheet(); go("store"); }
+  };
 
   return (
     <>
-      <div className="drop">{CAMERA_ICON}
-        <b>Photograph your shelves and kit</b>
-        <span className="small muted">Spread tins out with labels facing the camera. Torches, radios, batteries and first aid kits are ticked off your Be Ready list too. Up to {max} photos at a time.</span>
-        <label className="file-label" htmlFor="photo-input">{files.length ? "Choose different photos" : "Take or choose photos"}
-          <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => {
-            const all = Array.from(e.target.files || []);
-            setFiles(all.slice(0, max)); setScanned([]);
-            setMsg(all.length > max ? `Using the first ${max} photos.` : "");
-          }} />
-        </label>
-        <div className="thumbs">{urls.map((u) => <img key={u} src={u} alt="Photo to scan" />)}</div>
-      </div>
-      {files.length > 0 && !scanned.length && (
+      {!scanned && (
+        <div className="drop">{CAMERA_ICON}
+          <b>Photograph a pile of food</b>
+          <span className="small muted">Pile it on a table or open the cupboard, labels facing you, and take one photo per shelf or pile. Claude finds every item and you check the list. Torches, radios and first aid kits are ticked off your Be Ready list too.</span>
+          <div className="scan-pick">
+            <label className="file-label" htmlFor="photo-camera">{files.length ? "Add another photo" : "Take a photo"}
+              <input type="file" id="photo-camera" accept="image/*" capture="environment" disabled={files.length >= max} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+            </label>
+            <label className="file-label alt" htmlFor="photo-input">Choose photos
+              <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp,image/heic" multiple disabled={files.length >= max} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+            </label>
+          </div>
+          {files.length > 0 && (
+            <div className="thumbs">{urls.map((u, i) => (
+              <span className="thumb" key={u}>
+                <img src={u} alt={`Photo ${i + 1} to scan`} />
+                <button type="button" aria-label={`Remove photo ${i + 1}`} onClick={() => { setFiles(files.filter((_, n) => n !== i)); setMsg(""); }}>×</button>
+              </span>
+            ))}</div>
+          )}
+          <span className="small muted">Up to {max} photos per scan{route === "hosted" && left !== null ? ` · ${plural(left, "photo scan", "photo scans")} left today` : ""}.</span>
+        </div>
+      )}
+      {needCode && (
+        <form className="card scan-code" onSubmit={(e) => { e.preventDefault(); const v = codeInput.current?.value.trim() || ""; if (!v) return; setInviteCode(v); run(); }}>
+          <label htmlFor="invite-code"><b>Invite code</b></label>
+          <span className="small muted">Pantry Prep is in a friends beta. Type the code you were given. It is saved on this phone.</span>
+          <input id="invite-code" ref={codeInput} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} defaultValue={getInviteCode()} />
+          <button className="btn primary block" type="submit" disabled={!!busy}>Save code and scan</button>
+        </form>
+      )}
+      {files.length > 0 && !scanned && !needCode && (
         <>
           <button className="btn primary block" disabled={!!busy} onClick={run}>{busy ? "Looking at your photos…" : `Find food in ${plural(files.length, "photo", "photos")}`}</button>
           {busy && <button className="btn block" onClick={() => busy.abort()}>Stop</button>}
         </>
       )}
       <p className="status" aria-live="polite">{msg}</p>
-      {scanned.length > 0 && (
+      {scanned && (
         <>
-          <div className="card" style={{ padding: "6px 16px" }}>
-            <div className="rows">
-              {scanned.map((s, i) => (
-                <div className="scan-row" key={i}>
-                  <input type="checkbox" checked={s.keep} aria-label="Keep this item" onChange={(e) => edit(i, (x) => { x.keep = e.target.checked; })} />
-                  <div className="row-main">
-                    <input type="text" value={s.name} aria-label="Item name" onChange={(e) => edit(i, (x) => { x.name = e.target.value.slice(0, 80); })} />
-                    <span className="s">{GROUPS[s.group].label}{s.cat ? "" : " · estimate"} <span className={`conf ${s.conf}`}>{s.conf}</span></span>
+          {list.length > 0 && (
+            <div className="card" style={{ padding: "6px 16px" }}>
+              <div className="rows" aria-label="Food found in your photos">
+                {list.map((s, i) => (
+                  <div className={`scan-row${s.keep ? "" : " off"}`} key={i}>
+                    <input type="checkbox" checked={s.keep} aria-label={`Keep ${s.name}`} onChange={(e) => edit(i, (x) => { x.keep = e.target.checked; })} />
+                    <div className="row-main">
+                      <input type="text" value={s.name} aria-label="Item name" onChange={(e) => edit(i, (x) => { x.name = e.target.value.slice(0, 80); })} />
+                      <span className="s">{s.pack ? `${s.pack} · ` : ""}{GROUPS[s.group].label}{s.cat ? "" : " · estimate"} {s.conf === "low" ? <span className="conf low">check</span> : <span className={`conf ${s.conf}`}>{s.conf}</span>}</span>
+                    </div>
+                    <div className="stepper">
+                      <button onClick={() => edit(i, (x) => { x.count = Math.max(1, x.count - 1); })} aria-label={`Fewer ${s.name}`}>−</button>
+                      <span className="num" aria-label="Count">{s.count}</span>
+                      <button onClick={() => edit(i, (x) => { x.count = Math.min(99, x.count + 1); })} aria-label={`More ${s.name}`}>+</button>
+                    </div>
                   </div>
-                  <div className="stepper">
-                    <button onClick={() => edit(i, (x) => { x.count = Math.max(1, x.count - 1); })} aria-label="Fewer">−</button>
-                    <span className="num">{s.count}</span>
-                    <button onClick={() => edit(i, (x) => { x.count = Math.min(99, x.count + 1); })} aria-label="More">+</button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-          <button className="btn primary block" onClick={() => {
-            const chosen = scanned.filter((s) => s.keep);
-            update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count }); });
-            closeSheet(); go("store"); toast(`Added ${plural(chosen.length, "item", "items")} from your photos`);
-          }}>Add {plural(keep, "item", "items")} to store</button>
+          )}
+          {keep > 0 && <button className="btn primary block" onClick={() => addChosen(false)}>Add {plural(keep, "item", "items")} to store</button>}
+          {keep > 0 && <button className="btn block" onClick={() => addChosen(true)}>Add and scan the next shelf</button>}
+          {!keep && <button className="btn primary block" onClick={() => { setFiles([]); setScanned(null); setMsg(""); }}>Try other photos</button>}
+          <button className="link-btn scan-missing" onClick={onMissing}>Something missing? Search the food list</button>
         </>
       )}
     </>
   );
 }
 
-const MODES: [AddMode, string][] = [["search", "Search foods"], ["barcode", "Barcode"], ["scan", "Scan a photo"]];
+// Photo first: one photo of a pile of food is the main way to add food. Search and barcodes are for odd items.
+const MODES: [AddMode, string][] = [["scan", "Photo"], ["search", "Search"], ["barcode", "Barcode"]];
 
 export function AddSheet({ group, mode: initial }: { group?: string; mode?: AddMode }) {
-  const [mode, setMode] = useState<AddMode>(initial || "search");
+  const [mode, setMode] = useState<AddMode>(initial || "scan");
   return (
     <Sheet title="Add food" extra={
       <div className="seg" role="tablist" aria-label="How to add food">
@@ -212,7 +273,7 @@ export function AddSheet({ group, mode: initial }: { group?: string; mode?: AddM
     }>
       {mode === "search" && <SearchPane initialGroup={group || "all"} />}
       {mode === "barcode" && <BarcodePane />}
-      {mode === "scan" && <ScanPane />}
+      {mode === "scan" && <ScanPane onMissing={() => setMode("search")} />}
     </Sheet>
   );
 }

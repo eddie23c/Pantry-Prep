@@ -17,7 +17,7 @@ export const LEGAL: Record<LegalPage, { title: string; html: string }> = {
 <ul>
 <li><b>Loading the app.</b> The app is hosted on GitHub Pages. Like any website, GitHub receives your IP address and browser details when the app loads, and may keep them in its logs for security. See <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub's privacy statement</a>.</li>
 <li><b>Barcode scanning.</b> The camera reads the barcode on your phone. Only the barcode number is sent to <a href="https://world.openfoodfacts.org/privacy" target="_blank" rel="noopener">Open Food Facts</a> to look up the product. Your camera picture is never sent.</li>
-<li><b>Photo scanning, if you turn it on.</b> Your photos are shrunk on your phone and sent straight to Anthropic, the company that makes Claude, using an API key that you add yourself. Pantry Prep does not keep the photos. Your key is stored only on this device and is not included in backups. Anthropic's <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">privacy policy</a> and API terms apply while it processes them. If you open Pantry Prep inside Claude without adding a key, scans run through your own Claude account instead, and the photos are still not kept by Pantry Prep.</li>
+<li><b>Photo scanning.</b> Your photos are shrunk on your phone and sent to the Pantry Prep scanner (run on Cloudflare), which passes them to Anthropic, the company that makes Claude, to find the food in them. The scanner does not keep the photos. It counts scans against a random id stored on your phone and your internet address, only to apply the daily limit, and forgets these counts every day. Anthropic's <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">privacy policy</a> and API terms apply while it processes them. If you add your own Anthropic API key instead, photos go straight from your phone to Anthropic, and your key is stored only on this device and is not included in backups. If you open Pantry Prep inside Claude, scans run through your own Claude account, and the photos are still not kept by Pantry Prep.</li>
 <li><b>Links.</b> Links to gov.uk and other sites open those sites, which have their own privacy policies.</li>
 </ul>
 <h3>Allergies and diet</h3>
@@ -68,7 +68,7 @@ export const LEGAL: Record<LegalPage, { title: string; html: string }> = {
 </ul>
 <h3>Known limits</h3>
 <ul>
-<li>Barcode and photo scanning need the camera. You can type a barcode number or search the food list instead.</li>
+<li>Photo and barcode scanning need the camera. You can choose saved photos, type a barcode number or search the food list instead.</li>
 <li>We check every change with automated accessibility tests, but have not yet had the app tested by disabled users.</li>
 </ul>
 <h3>Tell us about a problem</h3>

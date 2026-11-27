@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { OFF_BEANS, onboard, tab } from "./helpers";
+import { CORS, OFF_BEANS, onboard, PHOTO, SCAN_REPLY, tab } from "./helpers";
 
 test("first visit: welcome screens, then an empty store", async ({ page }) => {
   await page.goto("./");
@@ -18,6 +18,7 @@ test("first visit: welcome screens, then an empty store", async ({ page }) => {
 test("add food from the list and see days covered rise", async ({ page }) => {
   await onboard(page);
   await page.getByRole("button", { name: "Add food" }).click();
+  await page.getByRole("tab", { name: "Search" }).click();
   await page.getByPlaceholder("Search tins, packets, water…").fill("water");
   await page.getByRole("button", { name: "Add one Bottled water" }).first().click();
   await page.getByRole("button", { name: "Close" }).click();
@@ -98,24 +99,67 @@ test("printable cards open with a stock list and QR code", async ({ page, contex
   await expect(popup.getByRole("img", { name: /QR code/ })).toBeVisible();
 });
 
-test("photo scan asks for an API key, and the key can be saved and removed", async ({ page }) => {
+test("photo scan: pile photo, invite code, review the list, add to store", async ({ page }) => {
+  const bodies: any[] = [];
+  await page.route("https://scan.test/scan", async (r) => {
+    if (r.request().method() === "OPTIONS") return r.fulfill({ status: 204, headers: CORS });
+    const body = r.request().postDataJSON();
+    bodies.push(body);
+    if (body.code !== "beta") return r.fulfill({ status: 401, headers: CORS, json: { error: body.code ? "bad_code" : "code_needed" } });
+    return r.fulfill({ headers: CORS, json: { ...SCAN_REPLY, remaining: 11 } });
+  });
   await onboard(page);
   await page.getByRole("button", { name: "Add food" }).click();
-  await page.getByRole("tab", { name: "Scan a photo" }).click();
-  await page.getByRole("button", { name: "Add API key" }).click();
-  await expect(page.getByLabel("Anthropic API key")).toBeFocused();
+  // Photo is the first and default way to add food.
+  await expect(page.getByRole("tab", { name: "Photo" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Photograph a pile of food")).toBeVisible();
+  await page.locator("#photo-input").setInputFiles(PHOTO);
+  await expect(page.getByRole("img", { name: "Photo 1 to scan" })).toBeVisible();
+  await page.getByRole("button", { name: "Find food in 1 photo" }).click();
+  await expect(page.getByLabel("Invite code")).toBeFocused();
+  await page.getByLabel("Invite code").fill("beta");
+  await page.getByRole("button", { name: "Save code and scan" }).click();
+  await expect(page.getByText("Found 3 products, 1 to check")).toBeVisible();
+  expect(bodies.at(-1).images[0]).toMatch(/^\/9j\//);
+  expect(bodies.at(-1).device).toMatch(/^[A-Za-z0-9-]{8,}$/);
+  await page.getByRole("button", { name: "More Tuna chunks" }).click();
+  await page.getByRole("checkbox", { name: "Keep Mystery tin" }).uncheck();
+  await page.getByRole("button", { name: "Add 2 items to store" }).click();
+  await expect(page.locator("#screen-store [data-item]", { hasText: "Tuna chunks" })).toContainText("4");
+  await expect(page.locator("#screen-store [data-item]", { hasText: "Mystery tin" })).toHaveCount(0);
+  // The code is remembered, so the next scan goes straight through.
+  await page.getByRole("button", { name: "Add food" }).click();
+  await page.locator("#photo-input").setInputFiles(PHOTO);
+  await page.getByRole("button", { name: "Find food in 1 photo" }).click();
+  await expect(page.getByText("Found 3 products")).toBeVisible();
+  await expect(page.getByLabel("Invite code")).toHaveCount(0);
+});
+
+test("photo scan: daily limit message, and search is one tap away", async ({ page }) => {
+  await page.route("https://scan.test/scan", (r) =>
+    r.request().method() === "OPTIONS" ? r.fulfill({ status: 204, headers: CORS }) : r.fulfill({ status: 429, headers: CORS, json: { error: "daily_limit", remaining: 0 } }));
+  await onboard(page);
+  await page.getByRole("button", { name: "Add food" }).click();
+  await page.locator("#photo-input").setInputFiles(PHOTO);
+  await page.getByRole("button", { name: "Find food in 1 photo" }).click();
+  await expect(page.getByText("That's all the photo scans for today")).toBeVisible();
+  await expect(page.getByText("0 photo scans left today")).toBeVisible();
+  await page.getByRole("tab", { name: "Search" }).click();
+  await expect(page.getByPlaceholder("Search tins, packets, water…")).toBeVisible();
+});
+
+test("own API key can be saved and removed", async ({ page }) => {
+  await onboard(page);
+  await tab(page, "Prepare");
+  await page.getByText("Use your own Anthropic API key instead").click();
   await page.getByLabel("Anthropic API key").fill("not-a-key");
   await page.getByRole("button", { name: "Save key" }).click();
   await expect(page.getByText("doesn't look like an Anthropic API key")).toBeVisible();
   await page.getByLabel("Anthropic API key").fill("sk-ant-" + "x".repeat(30));
   await page.getByRole("button", { name: "Save key" }).click();
   await expect(page.locator("#key-card")).toContainText("Key saved");
-  await page.getByRole("button", { name: "Add food" }).click();
-  await page.getByRole("tab", { name: "Scan a photo" }).click();
-  await expect(page.getByText("Photograph your shelves and kit")).toBeVisible();
-  await page.getByRole("button", { name: "Close" }).click();
   await page.locator("#key-card").getByRole("button", { name: "Remove" }).click();
-  await expect(page.locator("#key-card")).toContainText("Off");
+  await expect(page.locator("#key-card")).toContainText("On");
 });
 
 test("clear the example store, then back up and restore", async ({ page }) => {

@@ -4,7 +4,7 @@ import type { House } from "../calc";
 import { LINKS } from "../data";
 import { checkReminderIcs, formatDate, kitCheckDue, nextCheck, todayIso } from "../dates";
 import { buildPrintFile } from "../print";
-import { getApiKey, looksLikeKey, setApiKey } from "../scan";
+import { getApiKey, looksLikeKey, SCAN_URL, setApiKey } from "../scan";
 import { fromBackup, toBackup } from "../storage";
 import { allergySummary } from "./AllergyPicker";
 import { pickedRecipes, plural, sortedRecipes, Stepper } from "./common";
@@ -73,7 +73,7 @@ function KitCard() {
           () => setCalStatus("The reminder could not be saved here."));
       }}>Add next check to my calendar</button>
       <p className="status" aria-live="polite">{calStatus}</p>
-      <button className="btn block" onClick={() => openSheet({ kind: "add", mode: "scan" })}>Scan my kit with the camera</button>
+      <button className="btn block" onClick={() => openSheet({ kind: "add", mode: "scan" })}>Photograph my kit</button>
     </div>
   );
 }
@@ -83,26 +83,41 @@ export function KeyCard() {
   const [key, setKey] = useState(getApiKey);
   const [status, setStatus] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const keyForm = key ? (
+    <div className="set-row">
+      <div className="row-main"><span className="t">Key saved</span><span className="s num">sk-ant-…{key.slice(-4)}</span></div>
+      <button className="btn danger" onClick={() => { setApiKey(""); setKey(""); toast("API key removed from this device"); }}>Remove</button>
+    </div>
+  ) : (
+    <>
+      <label className="search" htmlFor="key-input"><input ref={input} id="key-input" type="password" autoComplete="off" spellCheck={false} placeholder="Paste your API key (sk-ant-…)" aria-label="Anthropic API key" /></label>
+      <button className="btn primary block" onClick={() => {
+        const v = (input.current?.value || "").trim();
+        if (!looksLikeKey(v)) { setStatus("That doesn't look like an Anthropic API key. It starts with sk-ant-."); return; }
+        setApiKey(v); setKey(v); setStatus(""); toast("Photo scanning now uses your key");
+      }}>Save key</button>
+      <p className="small muted">Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Set a monthly spend limit there to stay in control.</p>
+    </>
+  );
+  if (SCAN_URL) {
+    return (
+      <div className="card" id="key-card">
+        <div className="card-head"><h2>Photo scanning</h2><span className="small muted">{key ? "Own key" : "On"}</span></div>
+        <p className="small muted">Free during the beta, with a daily allowance per phone. Photos are shrunk on your phone, checked by Claude to find the food, and not kept by Pantry Prep.</p>
+        <details open={!!key}>
+          <summary className="small">Use your own Anthropic API key instead</summary>
+          <p className="small muted">For unlimited scans. You pay Anthropic directly, roughly 4 to 6p per scan. The key stays on this device and is sent only to Anthropic.</p>
+          {keyForm}
+        </details>
+        <p className="status" aria-live="polite">{status}</p>
+      </div>
+    );
+  }
   return (
     <div className="card" id="key-card">
       <div className="card-head"><h2>Photo scanning</h2><span className="small muted">{key ? "On" : "Off"}</span></div>
       <p className="small muted">Scanning uses Claude through your own Anthropic API key, so you pay Anthropic directly, roughly 4 to 6p per scan. The key is kept only on this device and is sent only to Anthropic. Photos go to Anthropic for the scan and are not stored by Pantry Prep.</p>
-      {key ? (
-        <div className="set-row">
-          <div className="row-main"><span className="t">Key saved</span><span className="s num">sk-ant-…{key.slice(-4)}</span></div>
-          <button className="btn danger" onClick={() => { setApiKey(""); setKey(""); toast("API key removed from this device"); }}>Remove</button>
-        </div>
-      ) : (
-        <>
-          <label className="search" htmlFor="key-input"><input ref={input} id="key-input" type="password" autoComplete="off" spellCheck={false} placeholder="Paste your API key (sk-ant-…)" aria-label="Anthropic API key" /></label>
-          <button className="btn primary block" onClick={() => {
-            const v = (input.current?.value || "").trim();
-            if (!looksLikeKey(v)) { setStatus("That doesn't look like an Anthropic API key. It starts with sk-ant-."); return; }
-            setApiKey(v); setKey(v); setStatus(""); toast("Photo scanning is on");
-          }}>Save key</button>
-          <p className="small muted">Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Set a monthly spend limit there to stay in control.</p>
-        </>
-      )}
+      {keyForm}
       <p className="status" aria-live="polite">{status}</p>
     </div>
   );

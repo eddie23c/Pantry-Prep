@@ -1,10 +1,13 @@
 // Saving files: inside Claude the `downloads` capability is used; in a normal browser,
 // a download link (or a new tab for the printable cards).
 type Downloads = { save(o: { filename: string; data: Blob }): Promise<{ status?: string }> };
+import { isNativeApp } from "../native/platform";
+
 const w = window as any;
 const downloadsP: Promise<Downloads | null> = w.claude?.use ? w.claude.use("downloads").catch(() => null) : Promise.resolve(null);
 
 export async function saveFile(name: string, text: string, type: string): Promise<void> {
+  if (isNativeApp()) { await (await import("../native/bridge")).shareFile(name, text); return; }
   const dl = await downloadsP;
   if (dl) { await dl.save({ filename: name, data: new Blob([text], { type }) }); return; }
   const a = document.createElement("a");
@@ -18,6 +21,7 @@ export async function saveFile(name: string, text: string, type: string): Promis
 
 /** Opens the printable cards. Returns the message to show. */
 export async function openPrintable(html: string): Promise<string> {
+  if (isNativeApp()) return (await import("../native/bridge")).printHtml(html);
   const dl = await downloadsP;
   if (!dl) {
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
