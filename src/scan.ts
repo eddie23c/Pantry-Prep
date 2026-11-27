@@ -10,6 +10,7 @@ import { SCAN_SCHEMA, scanPrompt } from "./scanPrompt";
 export const SCAN_URL: string = ((import.meta.env.VITE_SCAN_URL as string | undefined) || "").replace(/\/+$/, "");
 const DEVICE_STORE = "pantry-prep-device";
 const INVITE_STORE = "pantry-prep-invite";
+const TESTER_STORE = "pantry-prep-tester";
 
 const KEY_STORE = "pantry-prep-anthropic-key";
 export const SCAN_MODEL = "claude-opus-5-5";
@@ -59,7 +60,7 @@ export async function toJpegBase64(file: Blob): Promise<string> {
 
 export type ScanErrorCode =
   | "no_key" | "bad_key" | "rate_limited" | "refused" | "network" | "failed"
-  | "code_needed" | "bad_code" | "daily_limit" | "busy" | "too_big";
+  | "code_needed" | "bad_code" | "daily_limit" | "busy" | "too_big" | "bad_tester" | "compare_off";
 
 export class ScanError extends Error {
   constructor(public code: ScanErrorCode, message: string, public remaining: number | null = null) {
@@ -97,18 +98,17 @@ export interface HostedResult {
   remaining: number | null;
 }
 
-/** Sends the photos to the Pantry Prep scan worker. */
-export async function scanHosted(files: Blob[], signal?: AbortSignal): Promise<HostedResult> {
+export const getTesterCode = () => store(TESTER_STORE);
+export const setTesterCode = (code: string) => store(TESTER_STORE, code.trim());
+
+const KNOWN: ScanErrorCode[] = ["code_needed", "bad_code", "daily_limit", "busy", "too_big", "refused", "rate_limited", "bad_tester", "compare_off"];
+
+/** Posts JSON to the scan worker and returns the reply, or throws a ScanError. */
+async function post(path: string, payload: unknown, signal?: AbortSignal): Promise<any> {
   if (!SCAN_URL) throw new ScanError("failed", "Hosted scanning is not set up");
-  const images = await Promise.all(files.slice(0, MAX_PHOTOS).map(toJpegBase64));
   let res: Response;
   try {
-    res = await fetch(`${SCAN_URL}/scan`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ device: deviceId(), code: getInviteCode(), images }),
-      signal,
-    });
+    res = await fetch(`${SCAN_URL}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal });
   } catch (err) {
     if (signal?.aborted) throw err;
     throw new ScanError("network", "No connection");
@@ -122,11 +122,55 @@ export async function scanHosted(files: Blob[], signal?: AbortSignal): Promise<H
   const remaining = body && typeof body.remaining === "number" ? body.remaining : null;
   if (!res.ok) {
     const code = body && typeof body.error === "string" ? body.error : "";
-    const known: ScanErrorCode[] = ["code_needed", "bad_code", "daily_limit", "busy", "too_big", "refused", "rate_limited"];
-    throw new ScanError(known.includes(code as ScanErrorCode) ? (code as ScanErrorCode) : "failed", (body && body.message) || `Scan failed (${res.status})`, remaining);
+    throw new ScanError(KNOWN.includes(code as ScanErrorCode) ? (code as ScanErrorCode) : "failed", (body && body.message) || `Scan failed (${res.status})`, remaining);
   }
-  return { data: body, remaining };
+  return body;
 }
+
+/** Sends the photos to the Pantry Prep scan worker. */
+export async function scanHosted(files: Blob[], signal?: AbortSignal): Promise<HostedResult> {
+  const images = await Promise.all(files.slice(0, MAX_PHOTOS).map(toJpegBase64));
+  const body = await post("/scan", { device: deviceId(), code: getInviteCode(), images }, signal);
+  return { data: body, remaining: typeof body.remaining === "number" ? body.remaining : null };
+}
+
+export interface CompareRun {
+  model: string;
+  ok: boolean;
+  error?: string;
+  food?: unknown[];
+  kit?: unknown[];
+  seconds?: number;
+  usd?: number | null;
+}
+
+export interface Tally {
+  compares: number;
+  votes: number;
+  none: number;
+  models: { model: string; runs: number; wins: number; avgItems: number; avgSeconds: number; avgUsd: number }[];
+}
+
+/** Testers only: one photo through every compare model at once. */
+export async function scanCompare(file: Blob, signal?: AbortSignal): Promise<{ results: CompareRun[]; remaining: number | null }> {
+  const images = [await toJpegBase64(file)];
+  const body = await post("/compare", { device: deviceId(), code: getInviteCode(), tester: getTesterCode(), images }, signal);
+  return { results: Array.isArray(body.results) ? body.results : [], remaining: typeof body.remaining === "number" ? body.remaining : null };
+}
+
+/** Records which model's list was most accurate ("none" if none were). Returns the new tally. */
+export const sendVote = (model: string): Promise<Tally> => post("/vote", { tester: getTesterCode(), model });
+export const getTally = (): Promise<Tally> => post("/tally", { tester: getTesterCode() });
+
+/** Short names for the models a compare scan can show. */
+export function modelLabel(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id);
+  if (!m) return id;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? "." + m[3] : ""}`;
+}
+
+/** US dollars to pence, roughly, for showing costs. */
+export const pence = (usd: number) => `${(usd * 79).toFixed(usd * 79 < 1 ? 2 : 1)}p`;
 
 /** Sends the photos to Claude and returns the raw result: { food: [...], kit: [...] }. */
 export async function scanWithApiKey(files: Blob[], signal?: AbortSignal): Promise<unknown> {

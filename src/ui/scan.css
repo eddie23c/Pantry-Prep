@@ -8,3 +8,13 @@
 .scan-code input { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 10px 12px; font: 700 1rem var(--font); }
 .scan-row.off .row-main { opacity: .5; }
 .scan-missing { justify-self: center; margin: 4px auto 0; display: block; }
+.compare-toggle { display: flex; gap: 8px; align-items: center; font-weight: 700; }
+.compare-toggle input { width: 18px; height: 18px; accent-color: var(--brand); }
+.compare { display: grid; gap: 12px; }
+.compare-card h3 { margin: 0; font-size: 1rem; }
+.compare-list { list-style: none; padding: 0; margin: 4px 0 12px; display: grid; gap: 6px; font-size: .9rem; }
+.compare-list .conf { margin-left: 6px; }
+.tester { margin-top: 10px; }
+.tally table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.tally th, .tally td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); }
+.tally td { text-align: right; }

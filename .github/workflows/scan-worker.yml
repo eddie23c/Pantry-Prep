@@ -2,7 +2,9 @@ name: Deploy scan worker
 
 # Deploys worker/ (the photo-scan proxy) to Cloudflare Workers, free plan.
 # Needs repository secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and ANTHROPIC_API_KEY,
-# and optionally SCAN_ACCESS_CODE (an invite code friends type once). Skips until they exist.
+# and optionally SCAN_ACCESS_CODE (an invite code friends type once) and SCAN_TESTER_CODE
+# (turns on compare scans). Repository variable SCAN_MODEL overrides the everyday model.
+# Skips until the required secrets exist.
 
 on:
   push:
@@ -25,6 +27,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       SCAN_ACCESS_CODE: ${{ secrets.SCAN_ACCESS_CODE }}
+      SCAN_TESTER_CODE: ${{ secrets.SCAN_TESTER_CODE }}
+      # Optional repository variable to switch the everyday model without editing wrangler.toml.
+      SCAN_MODEL: ${{ vars.SCAN_MODEL }}
     steps:
       - name: Check setup
         if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' || env.ANTHROPIC_API_KEY == ''
@@ -40,9 +45,10 @@ jobs:
         working-directory: worker
         run: |
           npm ci
-          npx wrangler deploy | tee deploy.log
+          if [ -n "$SCAN_MODEL" ]; then npx wrangler deploy --var "SCAN_MODEL:$SCAN_MODEL" | tee deploy.log; else npx wrangler deploy | tee deploy.log; fi
           printf '%s' "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY
           if [ -n "$SCAN_ACCESS_CODE" ]; then printf '%s' "$SCAN_ACCESS_CODE" | npx wrangler secret put ACCESS_CODE; fi
+          if [ -n "$SCAN_TESTER_CODE" ]; then printf '%s' "$SCAN_TESTER_CODE" | npx wrangler secret put TESTER_CODE; fi
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
-          echo "### Scan worker deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Scan worker deployed (everyday model: ${SCAN_MODEL:-from wrangler.toml})" >> "$GITHUB_STEP_SUMMARY"
           echo "Address: \`$url\`. Set the repository variable **SCAN_URL** to this, then re-run *Deploy to GitHub Pages*." >> "$GITHUB_STEP_SUMMARY"
