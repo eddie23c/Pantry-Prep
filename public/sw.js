@@ -1,9 +1,9 @@
 // Offline support: pages are network-first (so updates arrive), other files cache-first.
 // Everything the app loads from its own address is cached on first visit, so it works with no signal.
-const CACHE = "pantry-prep-v1";
+const CACHE = "pantry-prep-v2";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./manifest.webmanifest", "./icon.svg"])).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./manifest.webmanifest", "./icon.svg", "./splash-mark.svg"])).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {

@@ -1,8 +1,8 @@
 // Welcome screens on first visit: what the app does, household and days, then allergies and diet.
 import { useEffect, useRef, useState } from "react";
-import type { AppState, House } from "../calc";
+import { targets, type AppState, type House } from "../calc";
 import { AllergyPicker } from "./AllergyPicker";
-import { Stepper } from "./common";
+import { CountUp, fmt, Stepper } from "./common";
 import { useApp } from "./appState";
 
 const HOUSE: [keyof House, string, string][] = [
@@ -34,9 +34,9 @@ export function Onboarding() {
       if (!keepExample) { s.items = []; s.example = false; s.picked = []; }
     });
     go(keepExample ? "home" : "store");
-    if (!keepExample) toast("Tap + to add your first food");
+    if (!keepExample) toast("Tap + to scan or add your first food");
   };
-  const h = state.house;
+  const h = state.house, tg = targets(h);
 
   return (
     <div className="onboard" role="dialog" aria-modal="true" aria-labelledby="ob-h" ref={root}>
@@ -44,7 +44,7 @@ export function Onboarding() {
         <div className="ob-dots" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i} className={i === step ? "on" : undefined} />)}</div>
         {step === 0 && (
           <>
-            <div className="ob-hero"><img src="./icon.svg" alt="" width={84} height={84} /></div>
+            <div className="ob-hero"><img src="./icon.svg" alt="" width={96} height={96} /><span className="ob-wm">Pantry Prep</span></div>
             <h1 id="ob-h" ref={heading} tabIndex={-1}>Be ready for three days</h1>
             <p>If shops, power or water stop for a few days, would your home have enough to eat and drink? Pantry Prep helps you build a store that lasts, following the UK Government's <b>Be Ready</b> advice.</p>
             <ul className="ob-points"><li>See how many days your food and water last</li><li>Get a shopping list that fills the gaps</li><li>Find meals you can make without power, and print recipe cards</li></ul>
@@ -57,6 +57,11 @@ export function Onboarding() {
             <p className="ob-step">Step 1 of 2</p>
             <h1 id="ob-h" ref={heading} tabIndex={-1}>Who lives with you?</h1>
             <p className="muted">We use this to work out how much food and water you need.</p>
+            <div className="ob-need" aria-live="polite">
+              <div><span className="v num"><CountUp value={tg.water} format={(n) => fmt(n)} /> L</span><span className="k">water</span></div>
+              <div><span className="v num"><CountUp value={tg.kcal} format={(n) => fmt(n)} /></span><span className="k">kcal of food</span></div>
+              <p className="k">What your home needs for {h.days} days</p>
+            </div>
             <div className="card">
               {HOUSE.map(([k, label, sub]) => (
                 <div className="set-row" key={k}>

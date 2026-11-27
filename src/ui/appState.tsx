@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AppState } from "../calc";
 import { defaultState, load, save } from "../storage";
+import { haptic } from "./feel";
 
 export type Screen = "home" | "store" | "recipes" | "prepare";
 export type AddMode = "search" | "barcode" | "scan";
@@ -67,6 +68,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const toast = useCallback((msg: string) => {
     setToastMsg(msg);
+    haptic();
     clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToastMsg(""), 2200);
   }, []);

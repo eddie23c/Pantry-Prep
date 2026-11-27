@@ -1,10 +1,12 @@
 // Small shared pieces: number formatting, colours per food group, rings, steppers, recipe cards.
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { unsuitable } from "../allergens";
 import * as C from "../calc";
 import type { AppState, StoreItem } from "../calc";
 import { KINDS, RECIPES, type GroupId, type Ingredient, type Recipe } from "../data";
 import { useApp } from "./appState";
+import { reducedMotion } from "./feel";
+export { haptic } from "./feel";
 
 export const fmt = (n: number) => Math.round(n).toLocaleString("en-GB");
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -20,12 +22,38 @@ export function GroupDot({ group, children, tint = 15 }: { group: GroupId; child
   return <div className="dot" style={{ background: `color-mix(in srgb,${GCOL[group]} ${tint}%,transparent)`, color: GINK[group] }}>{children}</div>;
 }
 
+/** Starts at 0 on first draw, then eases to the value, so rings fill and numbers count up when a screen opens. */
+function useEased(target: number, ms = 900) {
+  const [v, setV] = useState(() => (reducedMotion() ? target : 0));
+  const from = useRef(v);
+  useEffect(() => {
+    if (reducedMotion()) { setV(target); from.current = target; return; }
+    const start = performance.now(), a = from.current;
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / ms), e = 1 - Math.pow(1 - t, 4);
+      const x = a + (target - a) * e;
+      from.current = x; setV(x);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return v;
+}
+
+/** A number that counts up to its value. `format` turns the in-between value into text. */
+export function CountUp({ value, format }: { value: number; format: (n: number) => string }) {
+  const v = useEased(value);
+  return <>{format(v)}</>;
+}
+
 export function Ring({ pct, color, size, stroke }: { pct: number; color: string; size: number; stroke: number }) {
-  const r = (size - stroke) / 2, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, pct));
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, p = useEased(Math.max(0, Math.min(1, pct)), 1100);
   return (
     <svg viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} />
-      <circle className="ring-fg" cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c.toFixed(1)} strokeDashoffset={(c * (1 - p)).toFixed(1)} />
+      {p > 0.001 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c.toFixed(1)} strokeDashoffset={(c * (1 - p)).toFixed(1)} />}
     </svg>
   );
 }

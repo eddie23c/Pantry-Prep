@@ -18,9 +18,12 @@ function TopBar() {
   const h = state.house;
   return (
     <header className="topbar">
-      <div>
+      <div className="brand-row">
+        <img className="brand-tile" src="./icon.svg" alt="" width={38} height={38} />
+        <div>
         <div className="sub" id="top-sub">{screen === "home" ? new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) : "Pantry Prep"}</div>
         <h1 id="top-title">{TITLES[screen]}</h1>
+        </div>
       </div>
       <button className="pill-btn" id="house-btn" onClick={() => go("prepare")}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7" /><path d="M5 10v10h14V10" /></svg>

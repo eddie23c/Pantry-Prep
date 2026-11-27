@@ -5,13 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Pantry Prep</title>
 <meta name="description" content="Build and check a 3-day emergency food and water store, as UK Government Be Ready advice recommends.">
-<meta name="theme-color" content="#0e7a62">
+<meta name="theme-color" content="#12382f">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Pantry Prep">
+<meta property="og:description" content="Build a three-day food and water store for your home, following UK Government Be Ready advice.">
+<meta property="og:url" content="https://eddie23c.github.io/Pantry-Prep/">
+<meta property="og:image" content="https://eddie23c.github.io/Pantry-Prep/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pantry Prep">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="./icon-192.png">
-<style>:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); } body { margin: 0; } img { max-width: 100%; }</style>
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); } body { margin: 0; } img { max-width: 100%; }
+/* Launch screen: shown until the app has drawn, then fades out. */
+#splash { position: fixed; inset: 0; z-index: 100; display: grid; place-content: center; justify-items: center; gap: 14px; background: radial-gradient(90% 60% at 50% 40%, #1d4d41, #12382f 70%); color: #fff; font: 750 1.9rem/1 "Bricolage Grotesque Variable", system-ui, sans-serif; letter-spacing: -.03em; transition: opacity .35s ease, visibility .35s; }
+#splash img { width: 104px; height: 104px; }
+#splash small { font: 600 .8rem/1.2 system-ui, sans-serif; letter-spacing: .04em; color: rgba(255,255,255,.7); }
+#splash.gone { opacity: 0; visibility: hidden; }
+@media (prefers-reduced-motion: no-preference) { #splash img { animation: splash-in .6s cubic-bezier(.22,1,.36,1) both; } @keyframes splash-in { from { transform: scale(.85); opacity: 0; } } }
+</style>
 </head>
 <body>
+<div id="splash" aria-hidden="true"><img src="./splash-mark.svg" alt=""><span>Pantry Prep</span><small>Three days. Sorted.</small></div>
 <div id="root"></div>
 <noscript><p style="padding:16px">Pantry Prep needs JavaScript turned on.</p></noscript>
 <script type="module" src="/src/main.tsx"></script>
