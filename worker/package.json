@@ -1,0 +1,17 @@
+{
+  "name": "pantry-prep-scan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pantry Prep photo-scan proxy on Cloudflare Workers: holds the Anthropic key, applies daily limits.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.159.0"
+  }
+}

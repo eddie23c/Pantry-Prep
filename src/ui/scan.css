@@ -1,0 +1,10 @@
+/* Photo scan pane (Add food → Photo). Kept apart from styles.css so brand work there does not clash. */
+.scan-pick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.file-label.alt { background: var(--track); color: var(--ink); }
+.file-label:has(input:disabled) { opacity: .45; cursor: default; }
+.thumb { position: relative; display: inline-block; }
+.thumb button { position: absolute; top: -6px; right: -6px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: var(--ink); color: var(--bg); font-weight: 800; line-height: 1; cursor: pointer; }
+.scan-code { display: grid; gap: 8px; }
+.scan-code input { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 10px 12px; font: 700 1rem var(--font); }
+.scan-row.off .row-main { opacity: .5; }
+.scan-missing { justify-self: center; margin: 4px auto 0; display: block; }

@@ -7,5 +7,5 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   build: { target: "es2020" },
-  test: { include: ["src/**/*.test.ts"] },
+  test: { include: ["src/**/*.test.ts", "worker/src/**/*.test.ts"] },
 });

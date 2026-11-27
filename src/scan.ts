@@ -1,12 +1,22 @@
-// Photo scanning with Claude, called straight from the browser with the person's own
-// Anthropic API key. The key and the photos never touch a Pantry Prep server: the key is
-// kept in this browser's storage, and photos go only to Anthropic for the scan.
-import { CATALOGUE, GROUPS, KINDS, KIT } from "./data";
+// Photo scanning with Claude. Two routes:
+// 1. Hosted (the default when the app is built with VITE_SCAN_URL): photos go to the Pantry
+//    Prep scan worker (worker/), which holds the key, applies daily limits and calls Claude.
+//    Nobody needs their own key. The worker does not keep the photos.
+// 2. Own key (advanced): the browser calls Anthropic directly with the person's own key,
+//    kept only in this browser's storage.
+import { SCAN_SCHEMA, scanPrompt } from "./scanPrompt";
+
+/** The scan worker's address, set at build time. Empty means hosted scanning is off. */
+export const SCAN_URL: string = ((import.meta.env.VITE_SCAN_URL as string | undefined) || "").replace(/\/+$/, "");
+const DEVICE_STORE = "pantry-prep-device";
+const INVITE_STORE = "pantry-prep-invite";
 
 const KEY_STORE = "pantry-prep-anthropic-key";
 export const SCAN_MODEL = "claude-opus-5-5";
-const MAX_SIDE = 1568; // longest edge sent; larger photos are shrunk on the phone first
-export const MAX_PHOTOS = 4;
+// Longest edge sent. Big enough to read most labels on a shelf photo, small enough to keep
+// uploads around 300 KB and each photo near 1,600 image tokens.
+const MAX_SIDE = 1400;
+export const MAX_PHOTOS = 3;
 
 export function getApiKey(): string {
   try {
@@ -30,7 +40,7 @@ export function looksLikeKey(key: string): boolean {
 }
 
 /** Shrinks a photo to at most MAX_SIDE pixels on its longest edge and returns base64 JPEG. */
-async function toJpegBase64(file: Blob): Promise<string> {
+export async function toJpegBase64(file: Blob): Promise<string> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
@@ -39,7 +49,7 @@ async function toJpegBase64(file: Blob): Promise<string> {
   canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   const blob: Blob = await new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not read photo"))), "image/jpeg", 0.85),
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not read photo"))), "image/jpeg", 0.8),
   );
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let bin = "";
@@ -47,64 +57,75 @@ async function toJpegBase64(file: Blob): Promise<string> {
   return btoa(bin);
 }
 
-export function scanPrompt(): string {
-  const cat = CATALOGUE.map((c) => `${c.id}: ${c.name} (${c.pack})`).join("\n");
-  const kit = KIT.filter((k) => k.look).map((k) => `${k.id}: ${k.look}`).join("\n");
-  return [
-    "These photos show part of a UK household's emergency store. Do two things.",
-    "",
-    "1. List every food or drink product you can see, one entry per distinct product.",
-    'If it is the same kind of product as a catalogue item below, set "id" to that catalogue id. Otherwise set "id" to "" and estimate nutrition for one pack from typical UK labels.',
-    "Count every visible pack. If packs are stacked or partly hidden, give your best count and set confidence to \"low\".",
-    "",
-    "Catalogue:",
-    cat,
-    "",
-    `"kind" is one of: ${Object.keys(KINDS).join(", ")}, or "" if none fits.`,
-    `"group" is one of: ${Object.keys(GROUPS).join(", ")}.`,
-    "",
-    "2. List which of these emergency kit items are clearly visible. Only include an id if you can actually see that item:",
-    kit,
-  ].join("\n");
-}
-
-const SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["food", "kit"],
-  properties: {
-    food: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "name", "pack", "count", "kind", "group", "kcal", "protein", "fibre", "litres", "portions", "confidence"],
-        properties: {
-          id: { type: "string" },
-          name: { type: "string" },
-          pack: { type: "string" },
-          count: { type: "integer" },
-          kind: { type: "string" },
-          group: { type: "string", enum: Object.keys(GROUPS) },
-          kcal: { type: "number" },
-          protein: { type: "number" },
-          fibre: { type: "number" },
-          litres: { type: "number" },
-          portions: { type: "number" },
-          confidence: { type: "string", enum: ["high", "medium", "low"] },
-        },
-      },
-    },
-    kit: { type: "array", items: { type: "string" } },
-  },
-};
-
-export type ScanErrorCode = "no_key" | "bad_key" | "rate_limited" | "refused" | "network" | "failed";
+export type ScanErrorCode =
+  | "no_key" | "bad_key" | "rate_limited" | "refused" | "network" | "failed"
+  | "code_needed" | "bad_code" | "daily_limit" | "busy" | "too_big";
 
 export class ScanError extends Error {
-  constructor(public code: ScanErrorCode, message: string) {
+  constructor(public code: ScanErrorCode, message: string, public remaining: number | null = null) {
     super(message);
   }
+}
+
+function store(key: string, value?: string): string {
+  try {
+    if (value === undefined) return localStorage.getItem(key) || "";
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    /* storage blocked */
+  }
+  return value || "";
+}
+
+/** A random id for this browser, so the worker can give each phone its own daily allowance. */
+export function deviceId(): string {
+  let id = store(DEVICE_STORE);
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) {
+    id = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    store(DEVICE_STORE, id);
+  }
+  return id;
+}
+
+export const getInviteCode = () => store(INVITE_STORE);
+export const setInviteCode = (code: string) => store(INVITE_STORE, code.trim());
+
+export interface HostedResult {
+  data: unknown;
+  /** Photo scans left today on this phone, if the worker said. */
+  remaining: number | null;
+}
+
+/** Sends the photos to the Pantry Prep scan worker. */
+export async function scanHosted(files: Blob[], signal?: AbortSignal): Promise<HostedResult> {
+  if (!SCAN_URL) throw new ScanError("failed", "Hosted scanning is not set up");
+  const images = await Promise.all(files.slice(0, MAX_PHOTOS).map(toJpegBase64));
+  let res: Response;
+  try {
+    res = await fetch(`${SCAN_URL}/scan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device: deviceId(), code: getInviteCode(), images }),
+      signal,
+    });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    throw new ScanError("network", "No connection");
+  }
+  let body: any = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* not JSON */
+  }
+  const remaining = body && typeof body.remaining === "number" ? body.remaining : null;
+  if (!res.ok) {
+    const code = body && typeof body.error === "string" ? body.error : "";
+    const known: ScanErrorCode[] = ["code_needed", "bad_code", "daily_limit", "busy", "too_big", "refused", "rate_limited"];
+    throw new ScanError(known.includes(code as ScanErrorCode) ? (code as ScanErrorCode) : "failed", (body && body.message) || `Scan failed (${res.status})`, remaining);
+  }
+  return { data: body, remaining };
 }
 
 /** Sends the photos to Claude and returns the raw result: { food: [...], kit: [...] }. */
@@ -123,7 +144,7 @@ export async function scanWithApiKey(files: Blob[], signal?: AbortSignal): Promi
         max_tokens: 16000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+        output_config: { effort: "medium", format: { type: "json_schema", schema: SCAN_SCHEMA } },
         messages: [
           {
             role: "user",
