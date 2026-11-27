@@ -52,3 +52,7 @@ It installs to the home screen and works offline after the first visit.
 ## Sources and accuracy
 
 Water uses the UK Government figure of 3 litres per person per day for drinking. Food targets (2,000 kcal, 50 g protein and 30 g fibre per adult per day) are approximate UK reference intakes and still need review. Nutrition per pack is a typical label figure. Pantry Prep gives general guidance, not medical or dietary advice.
+
+## iPhone app
+
+The same app is wrapped with Capacitor for the App Store, with native printing, sharing, reminders and haptics. It builds on GitHub's free macOS machines, so no Mac is needed. See [docs/app-store/README.md](docs/app-store/README.md).
