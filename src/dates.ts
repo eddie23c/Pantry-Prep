@@ -75,3 +75,37 @@ export function expiryPhrase(bb: string, today: string): string {
 export function kitCheckDue(last: string | undefined, today: string): boolean {
   return !last || !isIsoDate(last) || daysBetween(last, today) >= KIT_CHECK_DAYS;
 }
+
+/** The calendar day `days` after `iso`. */
+export function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+}
+
+/** When the next kit and food check is due: KIT_CHECK_DAYS after the last one, or from today. */
+export function nextCheck(last: string | undefined, today: string): string {
+  return addDays(last && isIsoDate(last) ? last : today, KIT_CHECK_DAYS);
+}
+
+/**
+ * A one-day calendar event (.ics) for the next check, with an alert that morning.
+ * Opening the file adds it to the phone's own calendar, so no server or push is needed.
+ */
+export function checkReminderIcs(due: string, stamp: Date = new Date()): string {
+  const compact = (iso: string) => iso.replace(/-/g, "");
+  const utc = stamp.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Pantry Prep//Store check//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:pantry-prep-check-${compact(due)}@pantry-prep`,
+    `DTSTAMP:${utc}`,
+    `DTSTART;VALUE=DATE:${compact(due)}`,
+    `DTEND;VALUE=DATE:${compact(addDays(due, 1))}`,
+    "SUMMARY:Check your Pantry Prep store",
+    "DESCRIPTION:Check best-before dates and eat and replace anything close. Test torches and radios\\, swap old batteries and medicines\\, and charge the power bank.",
+    "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Check your emergency food and kit", "TRIGGER:PT9H", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR", "",
+  ].join("\r\n");
+}

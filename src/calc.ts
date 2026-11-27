@@ -44,6 +44,8 @@ export interface AppState {
   diet: Diet;
   /** False until the person finishes the welcome screens. */
   onboarded: boolean;
+  /** A baby or toddler lives here, so formula and nappies join the kit list. */
+  baby?: boolean;
 }
 
 // Per person per day. Water is the UK Government Be Ready figure for drinking.
@@ -176,6 +178,11 @@ export function kitState(k: KitItem, state: AppState): "auto" | "hand" | "photo"
   return state.kit[k.id] || null;
 }
 
+/** The kit items that apply to this home: pet and baby items only when they are needed. */
+export function kitFor(state: AppState): KitItem[] {
+  return KIT.filter((k) => !k.when || (k.when === "pets" ? state.house.pets > 0 : !!state.baby));
+}
+
 export function kitDone(state: AppState): number {
-  return KIT.filter((k) => kitState(k, state)).length;
+  return kitFor(state).filter((k) => kitState(k, state)).length;
 }

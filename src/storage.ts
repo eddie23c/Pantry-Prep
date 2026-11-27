@@ -87,6 +87,7 @@ export function sanitise(raw: unknown): AppState | null {
     // Stores saved before onboarding existed belong to people already using the app.
     onboarded: s.onboarded === undefined ? true : Boolean(s.onboarded),
     ...(isIsoDate(s.kitChecked) ? { kitChecked: s.kitChecked } : {}),
+    ...(s.baby === true ? { baby: true } : {}),
   };
 }
 

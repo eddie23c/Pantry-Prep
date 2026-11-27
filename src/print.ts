@@ -3,8 +3,8 @@
 // needed, and a QR code back to the app. Pure function of the state, tested in print.test.ts.
 import qrcode from "qrcode-generator";
 import { ALLERGENS, recipeAllergens } from "./allergens";
-import { kitState, people, targets, totals, type AppState } from "./calc";
-import { KINDS, KIT, RECIPES, type Recipe } from "./data";
+import { kitFor, kitState, people, targets, totals, type AppState } from "./calc";
+import { KINDS, RECIPES, type Recipe } from "./data";
 import { formatDate } from "./dates";
 
 const esc = (v: unknown) =>
@@ -39,7 +39,7 @@ export function buildPrintFile(state: AppState, appUrl: string, now: Date = new 
   for (let i = 0; i < picked.length; i += 4) sheets.push(picked.slice(i, i + 4));
   const items = [...state.items].sort((a, b) => (a.bb || "9999") < (b.bb || "9999") ? -1 : (a.bb || "9999") > (b.bb || "9999") ? 1 : a.name.localeCompare(b.name));
   const rows = items.map((it) => `<tr><td>${esc(it.name)}</td><td>${esc(it.pack || "")}</td><td class="n">${esc(it.count)}</td><td>${it.bb ? esc(formatDate(it.bb)) : ""}</td></tr>`).join("");
-  const kit = KIT.map((k) => `<li><span class="box">${kitState(k, state) ? "✓" : ""}</span>${esc(k.label)}</li>`).join("");
+  const kit = kitFor(state).map((k) => `<li><span class="box">${kitState(k, state) ? "✓" : ""}</span>${esc(k.label)}</li>`).join("");
   const qr = qrSvg(appUrl, "QR code: open Pantry Prep");
 
   return `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>Pantry Prep: emergency store and recipe cards</title><style>

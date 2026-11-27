@@ -1,5 +1,5 @@
 import * as C from "../calc";
-import { CAT, GROUPS, KIT } from "../data";
+import { CAT, GROUPS } from "../data";
 import { expiring, expiryPhrase, expiryStatus, formatDate, kitCheckDue, todayIso } from "../dates";
 import { fromCat } from "../storage";
 import { addItem, CountUp, fmt, GCOL, GroupDot, LEVEL_WORD, plural, RecipeCard, Ring, sortedRecipes } from "./common";
@@ -53,10 +53,10 @@ export function Home() {
     { n: "Fibre", have: t.fibre, need: tg.fibre, u: "g", c: "var(--fibre)" },
   ];
   const shop = C.shoppingList(state);
-  const kitDone = C.kitDone(state);
+  const kitDone = C.kitDone(state), kitAll = C.kitFor(state).length;
   const today = todayIso();
   const ready = sortedRecipes(state).filter((x) => x.s.ready);
-  const kitNote = kitCheckDue(state.kitChecked, today) ? (state.kitChecked ? "Due a check" : "Not checked yet") : kitDone === KIT.length ? "Complete" : `Checked ${formatDate(state.kitChecked!)}`;
+  const kitNote = kitCheckDue(state.kitChecked, today) ? (state.kitChecked ? "Due a check" : "Not checked yet") : kitDone === kitAll ? "Complete" : `Checked ${formatDate(state.kitChecked!)}`;
 
   return (
     <>
@@ -126,8 +126,8 @@ export function Home() {
       <div className="card">
         <div className="card-head"><h2>Emergency kit</h2><button className="link-btn" onClick={() => go("prepare")}>Open checklist</button></div>
         <div className="bar-row">
-          <div className="bar-top"><b>{kitDone} of {KIT.length} Be Ready items</b><span className="muted small">{kitNote}</span></div>
-          <div className="bar"><i style={{ width: `${(kitDone / KIT.length * 100).toFixed(1)}%`, background: "var(--brand)" }} /></div>
+          <div className="bar-top"><b>{kitDone} of {kitAll} Be Ready items</b><span className="muted small">{kitNote}</span></div>
+          <div className="bar"><i style={{ width: `${(kitDone / kitAll * 100).toFixed(1)}%`, background: "var(--brand)" }} /></div>
         </div>
       </div>
 
@@ -135,7 +135,7 @@ export function Home() {
         <div className="card-head"><h2>Cook from your store</h2><button className="link-btn" onClick={() => go("recipes")}>See all</button></div>
         {ready.length ? <div className="carousel">{ready.map((x) => <RecipeCard key={x.r.id} r={x.r} s={x.s} />)}</div> : <p className="empty-line">{unlockLine(state)}</p>}
       </div>
-      <p className="small muted disclaimer">General guidance, not medical advice. <button className="link-btn" onClick={() => openSheet({ kind: "about" })}>How we count</button></p>
+      <p className="small muted disclaimer">General guidance, not medical advice. <button className="link-btn" onClick={() => openSheet({ kind: "about" })}>How we count</button> · <button className="link-btn" onClick={() => openSheet({ kind: "feedback" })}>Send feedback</button></p>
     </>
   );
 }

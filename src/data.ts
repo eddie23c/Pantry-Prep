@@ -42,6 +42,8 @@ export interface KitItem {
   auto?: "water" | "food";
   /** What a photo scan should look for. */
   look?: string;
+  /** Only listed for homes with pets, or with a baby or toddler. */
+  when?: "pets" | "baby";
 }
 
 // Typical figures per pack (approximate, from common UK supermarket labels).
@@ -183,8 +185,8 @@ export const KIT: KitItem[] = [
   { id: "medication", label: "Essential medication", look: "medicine boxes, tablets or prescription bags" },
   { id: "warmth", label: "Blankets, sleeping bags, warm clothes", look: "blankets, sleeping bags, foil blankets or warm clothing" },
   { id: "hygiene", label: "Hand sanitiser, wet wipes, toiletries", look: "hand sanitiser, wet wipes, toilet roll or toiletries" },
-  { id: "baby", label: "Baby formula, nappies and wipes (if needed)", look: "baby formula, nappies or baby wipes" },
-  { id: "pets", label: "Pet food and water (if needed)", look: "pet food tins, bags or pouches" }
+  { id: "baby", label: "Baby formula, nappies and wipes", look: "baby formula, nappies or baby wipes", when: "baby" },
+  { id: "pets", label: "Pet food and water", look: "pet food tins, bags or pouches", when: "pets" }
 ];
 export const LINKS: [url: string, title: string, note: string][] = [
   ["https://beready.campaign.gov.uk/be-ready-for-emergencies/", "Be Ready: be ready for emergencies", "UK Government. The 3-day checklist for every household."],
@@ -195,3 +197,12 @@ export const LINKS: [url: string, title: string, note: string][] = [
   ["https://www.nidirect.gov.uk/articles/household-emergency-kit", "nidirect: household emergency kit", "Northern Ireland guidance and contacts."],
   ["https://www.nhs.uk/live-well/eat-well/food-guidelines-and-food-labels/the-eatwell-guide/", "NHS: the Eatwell Guide", "The food groups behind the balance check."]
 ];
+
+/** Shown in feedback so reports can be matched to a release. Keep in step with package.json. */
+export const APP_VERSION = "0.1.0";
+
+/** Where beta feedback goes. Leave the email empty to use a GitHub issue instead. */
+export const FEEDBACK = {
+  email: "",
+  issues: "https://github.com/eddie23c/Pantry-Prep/issues/new",
+};

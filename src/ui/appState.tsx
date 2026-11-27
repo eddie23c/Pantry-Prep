@@ -13,7 +13,10 @@ export type SheetState =
   | { kind: "item"; id: string }
   | { kind: "about" }
   | { kind: "diet" }
+  | { kind: "feedback" }
   | { kind: "legal"; page: string };
+
+export interface ToastAction { label: string; run: () => void }
 
 interface Ctx {
   state: AppState;
@@ -25,8 +28,11 @@ interface Ctx {
   sheet: SheetState | null;
   openSheet: (s: SheetState) => void;
   closeSheet: () => void;
-  toast: (msg: string) => void;
+  /** Show a short message. With an action, a button (such as Undo) shows beside it for a little longer. */
+  toast: (msg: string, action?: ToastAction) => void;
   toastMsg: string;
+  toastAction: ToastAction | null;
+  dismissToast: () => void;
 }
 
 const AppContext = createContext<Ctx | null>(null);
@@ -50,6 +56,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [toastMsg, setToastMsg] = useState("");
+  const [toastAction, setToastAction] = useState<ToastAction | null>(null);
   const toastTimer = useRef(0);
 
   const update = useCallback((fn: (s: AppState) => void) => {
@@ -66,17 +73,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
     try { sessionStorage.setItem("pp-screen", s); } catch { /* storage blocked */ }
   }, []);
-  const toast = useCallback((msg: string) => {
+  const dismissToast = useCallback(() => { clearTimeout(toastTimer.current); setToastMsg(""); setToastAction(null); }, []);
+  const toast = useCallback((msg: string, action?: ToastAction) => {
     setToastMsg(msg);
+    setToastAction(action || null);
     haptic();
     clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToastMsg(""), 2200);
+    toastTimer.current = window.setTimeout(() => { setToastMsg(""); setToastAction(null); }, action ? 6000 : 2200);
   }, []);
   const closeSheet = useCallback(() => setSheet(null), []);
 
   const value = useMemo(
-    () => ({ state, update, replace, screen, go, sheet, openSheet: setSheet, closeSheet, toast, toastMsg }),
-    [state, update, replace, screen, go, sheet, closeSheet, toast, toastMsg],
+    () => ({ state, update, replace, screen, go, sheet, openSheet: setSheet, closeSheet, toast, toastMsg, toastAction, dismissToast }),
+    [state, update, replace, screen, go, sheet, closeSheet, toast, toastMsg, toastAction, dismissToast],
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
