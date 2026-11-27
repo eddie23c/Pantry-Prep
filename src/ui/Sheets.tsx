@@ -1,9 +1,10 @@
 // Bottom sheets: the shell (focus, Escape, scrim) and the simple sheets that go in it.
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ALLERGENS, recipeAllergens } from "../allergens";
 import * as C from "../calc";
-import { RECIPES, type Recipe } from "../data";
+import { APP_VERSION, FEEDBACK, RECIPES, type Recipe } from "../data";
 import { expiryPhrase, expiryStatus, isIsoDate, SOON_DAYS, todayIso } from "../dates";
+import { feedbackLink } from "../feedback";
 import { LEGAL, type LegalPage } from "../legal";
 import { AllergyPicker } from "./AllergyPicker";
 import { fmt, ingLabel, MatchBadge, Stepper, whyNot } from "./common";
@@ -112,7 +113,12 @@ export function ItemSheet({ id }: { id: string }) {
       <div className="card">
         <p className="small muted num">Per pack: {it.group === "water" ? `${fmt(it.litres)} L water` : `${fmt(it.kcal)} kcal, ${fmt(it.protein)} g protein, ${fmt(it.fibre)} g fibre`}.{it.cat ? " Typical UK label figure." : " Estimated, so check the pack."}</p>
       </div>
-      <button className="btn danger block" onClick={() => { const name = it.name; closeSheet(); update((s) => { s.items = s.items.filter((x) => x.uid !== id); }); toast(`Removed ${name}`); }}>Remove from store</button>
+      <button className="btn danger block" onClick={() => {
+        const removed = structuredClone(it), at = state.items.indexOf(it);
+        closeSheet();
+        update((s) => { s.items = s.items.filter((x) => x.uid !== id); });
+        toast(`Removed ${removed.name}`, { label: "Undo", run: () => update((s) => { if (!s.items.some((x) => x.uid === removed.uid)) s.items.splice(Math.min(at, s.items.length), 0, removed); }) });
+      }}>Remove from store</button>
     </Sheet>
   );
 }
@@ -148,4 +154,21 @@ export function LegalSheet({ page }: { page: string }) {
   if (!doc) return null;
   // The legal text is our own static HTML from legal.ts, not user input.
   return <Sheet title={doc.title}><div className="card legal" dangerouslySetInnerHTML={{ __html: doc.html }} /></Sheet>;
+}
+
+export function FeedbackSheet() {
+  const [text, setText] = useState("");
+  return (
+    <Sheet title="Send feedback">
+      <div className="card">
+        <p className="small muted">What worked, what was confusing, or what you wish it did. Your note opens in {FEEDBACK.email ? "your email app" : "a new GitHub issue"}, so you can check it before it is sent. Nothing about your store is included.</p>
+        <label className="field" htmlFor="feedback-text">
+          <span className="t">Your feedback</span>
+          <textarea id="feedback-text" className="feedback-text" value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} placeholder="For example: the photo scan missed my tins of soup" />
+        </label>
+        <a className={`btn primary block${text.trim() ? "" : " disabled"}`} id="feedback-send" aria-disabled={!text.trim()}
+          href={text.trim() ? feedbackLink(text, APP_VERSION) : undefined} target="_blank" rel="noopener">Send feedback</a>
+      </div>
+    </Sheet>
+  );
 }

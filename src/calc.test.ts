@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysCovered, kitState, level, recipeStatus, shoppingList, targets, totals, type AppState } from "./calc";
+import { daysCovered, kitFor, kitState, level, recipeStatus, shoppingList, targets, totals, type AppState } from "./calc";
 import { KIT, RECIPES } from "./data";
 import { fromCat } from "./storage";
 
@@ -78,5 +78,16 @@ describe("kit checklist", () => {
   it("keeps items seen in a photo", () => {
     const torch = KIT.find((k) => k.id === "torch")!;
     expect(kitState(torch, state([], { kit: { torch: "photo" } }))).toBe("photo");
+  });
+});
+
+describe("kit fits the household", () => {
+  it("lists pet and baby items only when they apply", () => {
+    const ids = (s: AppState) => kitFor(s).map((k) => k.id);
+    expect(ids(state([]))).not.toContain("baby");
+    expect(ids(state([], { baby: true }))).toContain("baby");
+    expect(ids(state([], { house: { ...house, pets: 0 } }))).not.toContain("pets");
+    expect(ids(state([], { house: { ...house, pets: 1 } }))).toContain("pets");
+    expect(kitFor(state([], { baby: true, house: { ...house, pets: 1 } })).length).toBe(KIT.length);
   });
 });

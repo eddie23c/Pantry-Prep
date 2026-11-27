@@ -7,7 +7,7 @@ import { Home } from "./Home";
 import { Onboarding } from "./Onboarding";
 import { Prepare } from "./Prepare";
 import { Recipes } from "./Recipes";
-import { AboutSheet, DietSheet, ItemSheet, LegalSheet, RecipeSheet } from "./Sheets";
+import { AboutSheet, DietSheet, FeedbackSheet, ItemSheet, LegalSheet, RecipeSheet } from "./Sheets";
 import { Store } from "./Store";
 import { useApp, type Screen } from "./appState";
 
@@ -70,12 +70,13 @@ function CurrentSheet() {
     case "item": return <ItemSheet id={sheet.id} />;
     case "about": return <AboutSheet />;
     case "diet": return <DietSheet />;
+    case "feedback": return <FeedbackSheet />;
     case "legal": return <LegalSheet page={sheet.page} />;
   }
 }
 
 export function App() {
-  const { state, screen, sheet, openSheet, toastMsg } = useApp();
+  const { state, screen, sheet, openSheet, toastMsg, toastAction, dismissToast } = useApp();
 
   // #privacy, #terms and #accessibility open those pages, so they can be linked from anywhere.
   useEffect(() => {
@@ -101,7 +102,10 @@ export function App() {
       <TabBar inert={behind} />
       <CurrentSheet />
       {!state.onboarded && <Onboarding />}
-      <div className="toast" role="status" hidden={!toastMsg}>{toastMsg}</div>
+      <div className={`toast${toastAction ? " has-action" : ""}`} role="status" hidden={!toastMsg}>
+        <span>{toastMsg}</span>
+        {toastAction && <button className="toast-action" onClick={() => { toastAction.run(); dismissToast(); }}>{toastAction.label}</button>}
+      </div>
     </>
   );
 }

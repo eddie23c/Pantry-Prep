@@ -148,7 +148,7 @@ a { color: var(--brand); }
 .btn.primary { background: var(--brand); color: var(--brand-ink); }
 .btn.block { width: 100%; }
 .btn.danger { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad-ink); }
-.btn:disabled { opacity: .45; cursor: default; }
+.btn:disabled, .btn.disabled { opacity: .45; cursor: default; }
 
 /* Chips */
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
@@ -325,3 +325,11 @@ a { color: var(--brand); }
 .legal .lead { font-weight: 700; font-size: 1.02rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .pane { display: flex; flex-direction: column; gap: 14px; }
+
+/* Toast with an Undo button */
+.toast.has-action { display: flex; align-items: center; gap: 14px; padding: 6px 6px 6px 16px; }
+.toast-action { background: transparent; color: inherit; border: 0; font: inherit; font-weight: 800; padding: 8px 12px; min-height: 40px; border-radius: 999px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.toast-action:focus-visible { outline: 2px solid var(--bg); outline-offset: 2px; }
+.feedback-text { width: 100%; min-height: 140px; font: inherit; padding: 12px; border-radius: 12px; border: 1px solid var(--line, #ccc); background: var(--card, transparent); color: var(--ink); resize: vertical; box-sizing: border-box; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.toggle-row input { width: 24px; height: 24px; accent-color: var(--brand); flex: none; }

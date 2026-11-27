@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import * as C from "../calc";
 import type { House } from "../calc";
-import { KIT, LINKS } from "../data";
-import { formatDate, kitCheckDue, todayIso } from "../dates";
+import { LINKS } from "../data";
+import { checkReminderIcs, formatDate, kitCheckDue, nextCheck, todayIso } from "../dates";
 import { buildPrintFile } from "../print";
 import { getApiKey, looksLikeKey, setApiKey } from "../scan";
 import { fromBackup, toBackup } from "../storage";
@@ -26,17 +26,28 @@ function HouseRow({ k, label, sub }: { k: keyof House; label: string; sub: strin
   );
 }
 
+export function BabyRow() {
+  const { state, update } = useApp();
+  return (
+    <label className="set-row toggle-row" htmlFor="baby-toggle">
+      <span className="row-main"><span className="t">Baby or toddler at home</span><span className="s">Adds formula, nappies and wipes to your kit</span></span>
+      <input type="checkbox" id="baby-toggle" checked={!!state.baby} onChange={(e) => { const on = e.target.checked; update((s) => { if (on) s.baby = true; else delete s.baby; }); }} />
+    </label>
+  );
+}
+
 function KitCard() {
   const { state, update, openSheet, toast } = useApp();
-  const done = C.kitDone(state);
-  const due = kitCheckDue(state.kitChecked, todayIso());
+  const done = C.kitDone(state), kit = C.kitFor(state);
+  const today = todayIso(), due = kitCheckDue(state.kitChecked, today), next = nextCheck(state.kitChecked, today);
+  const [calStatus, setCalStatus] = useState("");
   return (
     <div className="card">
-      <div className="card-head"><h2>Be Ready kit</h2><span className="small muted num">{done} of {KIT.length}</span></div>
+      <div className="card-head"><h2>Be Ready kit</h2><span className="small muted num">{done} of {kit.length}</span></div>
       <p className="small muted">From the UK Government checklist. Items tick themselves when your store covers them or a photo shows them. Tick the rest by hand.</p>
-      <div className="bar"><i style={{ width: `${(done / KIT.length * 100).toFixed(1)}%`, background: "var(--brand)" }} /></div>
+      <div className="bar"><i style={{ width: `${(done / kit.length * 100).toFixed(1)}%`, background: "var(--brand)" }} /></div>
       <ul className="check-list">
-        {KIT.map((k) => {
+        {kit.map((k) => {
           const st = C.kitState(k, state);
           return (
             <li key={k.id}>
@@ -56,6 +67,12 @@ function KitCard() {
         </div>
         <button className={`btn${due ? " primary" : ""}`} id="kit-checked-btn" onClick={() => { update((s) => { s.kitChecked = todayIso(); }); toast("Kit check saved"); }}>I checked it today</button>
       </div>
+      <button className="btn block" id="calendar-btn" onClick={() => {
+        saveFile("pantry-prep-check.ics", checkReminderIcs(next), "text/calendar").then(
+          () => setCalStatus(`Open the file to add a reminder for ${formatDate(next)} to your calendar.`),
+          () => setCalStatus("The reminder could not be saved here."));
+      }}>Add next check to my calendar</button>
+      <p className="status" aria-live="polite">{calStatus}</p>
       <button className="btn block" onClick={() => openSheet({ kind: "add", mode: "scan" })}>Scan my kit with the camera</button>
     </div>
   );
@@ -106,6 +123,7 @@ export function Prepare() {
           <HouseRow k="children" label="Children" sub="About 1,400 kcal a day each" />
           <HouseRow k="pets" label="Pets" sub="Store their food and water too" />
           <HouseRow k="days" label="Days to cover" sub="UK advice: at least 3" />
+          <BabyRow />
         </div>
       </div>
 
@@ -168,6 +186,12 @@ export function Prepare() {
           {LINKS.map(([url, title, note]) => <li key={url}><a href={url} target="_blank" rel="noopener">{title} ↗</a><span className="small muted">{note}</span></li>)}
         </ul>
         <p className="small muted">Links checked 26 November 2026.</p>
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h2>Tell us what you think</h2></div>
+        <p className="small muted">Pantry Prep is new. A line about what worked or what didn't helps us fix the right things first.</p>
+        <button className="btn block" id="feedback-btn" onClick={() => openSheet({ kind: "feedback" })}>Send feedback</button>
       </div>
 
       <div className="card">

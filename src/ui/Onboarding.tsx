@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { targets, type AppState, type House } from "../calc";
 import { AllergyPicker } from "./AllergyPicker";
 import { CountUp, fmt, Stepper } from "./common";
+import { BabyRow } from "./Prepare";
 import { useApp } from "./appState";
 
 const HOUSE: [keyof House, string, string][] = [
@@ -48,7 +49,7 @@ export function Onboarding() {
             <h1 id="ob-h" ref={heading} tabIndex={-1}>Be ready for three days</h1>
             <p>If shops, power or water stop for a few days, would your home have enough to eat and drink? Pantry Prep helps you build a store that lasts, following the UK Government's <b>Be Ready</b> advice.</p>
             <ul className="ob-points"><li>See how many days your food and water last</li><li>Get a shopping list that fills the gaps</li><li>Find meals you can make without power, and print recipe cards</li></ul>
-            <p className="small muted">Everything stays on this phone. No account, no sign-up.</p>
+            <p className="small muted">Free to use, with no limit on how much you store. Everything stays on this phone. No account, no sign-up.</p>
             <button className="btn primary block" onClick={() => setStep(1)}>Get started</button>
           </>
         )}
@@ -73,6 +74,7 @@ export function Onboarding() {
                     })} />
                 </div>
               ))}
+              <BabyRow />
             </div>
             <div className="card">
               <div className="row-main"><span className="t">How many days to cover?</span><span className="s">The government advises at least 3 days.</span></div>
