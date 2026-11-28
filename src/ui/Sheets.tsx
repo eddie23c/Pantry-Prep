@@ -106,12 +106,13 @@ export function ItemSheet({ id }: { id: string }) {
         <label className="field" htmlFor="bb-input">
           <span className="t">Best-before date</span>
           <span className="s">Use the earliest date if your packs differ. We remind you {SOON_DAYS} days ahead.</span>
-          <input type="date" id="bb-input" value={it.bb || ""} onChange={(e) => { const v = e.target.value; edit((x) => { if (isIsoDate(v)) x.bb = v; else delete x.bb; }); }} />
+          <input type="date" id="bb-input" value={it.bb || ""} onChange={(e) => { const v = e.target.value; edit((x) => { if (isIsoDate(v)) x.bb = v; else delete x.bb; delete x.bbFrom; }); }} />
         </label>
         {u && <p className={`small ${expiryStatus(u.date, today) === "ok" ? "muted" : "warn-text"}`}>{expiryPhrase(u.date, today, u.estimated)}</p>}
+        {it.bb && it.bbFrom && <p className="small muted">{it.bbFrom === "some" ? "The scan read this date on some of these packs and used it for the rest." : "The scan could not see this date, so it used the date from a matching pack."} Check the packs when you can.</p>}
         {u?.estimated && <p className="small muted">No date entered, so we estimate about {shelfMonths(it)} months for {it.kind && KINDS[it.kind] ? KINDS[it.kind].toLowerCase() : "this kind of food"} from when you added it on {formatDate(it.added!)}. Type the date from the pack for an exact reminder.</p>}
         {!u && <p className="small muted">No date yet. Type the date from the pack, or tap Bought fresh if you just bought it, and we will remind you in good time.</p>}
-        <button className="btn block" id="fresh-btn" onClick={() => { edit((x) => { delete x.bb; x.added = today; }); toast("Marked as freshly bought"); }}>Bought fresh today</button>
+        <button className="btn block" id="fresh-btn" onClick={() => { edit((x) => { delete x.bb; delete x.bbFrom; x.added = today; }); toast("Marked as freshly bought"); }}>Bought fresh today</button>
       </div>
       <div className="card">
         <p className="small muted num">Per pack: {it.group === "water" ? `${fmt(it.litres)} L water` : `${fmt(it.kcal)} kcal, ${fmt(it.protein)} g protein, ${fmt(it.fibre)} g fibre`}.{it.cat ? " Typical UK label figure." : " Estimated, so check the pack."}</p>

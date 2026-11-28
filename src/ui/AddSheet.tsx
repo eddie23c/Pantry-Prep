@@ -2,16 +2,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderBarcodePane, stopBarcode } from "../barcode";
 import { CAT, CATALOGUE, GROUP_ORDER, GROUPS, KINDS } from "../data";
-import { getApiKey, getInviteCode, getTesterCode, MAX_PHOTOS, SCAN_URL, ScanError, scanCompare, scanHosted, scanWithApiKey, sendVote, setInviteCode, modelLabel, type CompareRun } from "../scan";
+import { getApiKey, getInviteCode, getTesterCode, MAX_PHOTOS, SCAN_URL, VIDEO_FRAMES, ScanError, scanCompare, scanHosted, scanWithApiKey, sendVote, setInviteCode, modelLabel, type CompareRun } from "../scan";
 import { CompareResults } from "./Compare";
-import { kitFrom, normalise, samplePrompt, type ScannedItem } from "../scanResult";
+import { dateNote, fillDates, kitFrom, mergeRepeats, normalise, samplePrompt, type ScannedItem } from "../scanResult";
+import { extractFrames, FrameError } from "../frames";
 import { fromCat, uid } from "../storage";
-import { isIsoDate, todayIso } from "../dates";
+import { formatDate, isIsoDate, todayIso } from "../dates";
 import { addItem, fmt, GroupDot, GSHORT, plural } from "./common";
 import { Sheet } from "./Sheets";
 import { useApp, type AddMode } from "./appState";
 import "./scan.css";
 
+const VIDEO_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.5" /><path d="M15.5 10.5l6-3.5v10l-6-3.5" /></svg>
+);
 const CAMERA_ICON = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="3" /><circle cx="12" cy="13" r="3.5" /><path d="M8 6l1.5-2h5L16 6" /></svg>
 );
@@ -118,8 +122,11 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
   const canCompare = route === "hosted" && !!getTesterCode();
   const [compare, setCompare] = useState(false);
   const [compared, setCompared] = useState<CompareRun[] | null>(null);
-  const max = compare ? 1 : route === "sample" ? sample.max : MAX_PHOTOS;
   const [files, setFiles] = useState<File[]>([]);
+  // Set when `files` are frames taken from one video, rather than photos.
+  const [video, setVideo] = useState(false);
+  const [framing, setFraming] = useState(false);
+  const max = compare ? 1 : route === "sample" ? Math.min(sample.max, video ? VIDEO_FRAMES : MAX_PHOTOS) : video ? VIDEO_FRAMES : MAX_PHOTOS;
   const [scanned, setScanned] = useState<ScannedItem[] | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState<AbortController | null>(null);
@@ -148,9 +155,28 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
 
   const addFiles = (list: FileList | null) => {
     const picked = Array.from(list || []).filter((f) => f.type.startsWith("image/"));
-    const all = [...files, ...picked];
+    // Photos and video frames are scanned differently, so adding photos replaces any video.
+    const all = [...(video ? [] : files), ...picked];
+    if (video) setVideo(false);
+    const max = compare ? 1 : route === "sample" ? sample.max : MAX_PHOTOS;
     setFiles(all.slice(0, max)); setScanned(null);
     setMsg(all.length > max ? `Up to ${max} photos per scan. Using the first ${max}.` : "");
+  };
+
+  const addVideo = async (list: FileList | null) => {
+    const file = Array.from(list || []).find((f) => f.type.startsWith("video/") || /\.(mov|mp4|m4v|webm|3gp)$/i.test(f.name));
+    if (!file) return;
+    setScanned(null); setFraming(true); setMsg("Picking the clearest moments from your video…");
+    try {
+      const n = route === "sample" ? Math.min(sample.max, VIDEO_FRAMES) : VIDEO_FRAMES;
+      const frames = await extractFrames(file, n, (d, t) => setMsg(`Picking the clearest moments from your video… ${Math.round((d / t) * 100)}%`));
+      setFiles(frames); setVideo(true);
+      setMsg(`Took ${plural(frames.length, "still", "stills")} from your video. Only these are sent, never the video.`);
+    } catch (err) {
+      setMsg(err instanceof FrameError ? err.message : "This video could not be read. Try recording again, or take photos instead.");
+    } finally {
+      setFraming(false);
+    }
   };
 
   const run = async () => {
@@ -165,10 +191,10 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
       }
       let data: unknown;
       if (route === "hosted") {
-        const r = await scanHosted(files, ctl.signal);
+        const r = await scanHosted(files, ctl.signal, video);
         data = r.data; setLeft(r.remaining);
-      } else if (route === "key") data = await scanWithApiKey(files, ctl.signal);
-      else data = await sampleP.then((s) => { if (!s) throw { code: "not_granted" }; return s.json(samplePrompt(), { images: files, signal: ctl.signal }); });
+      } else if (route === "key") data = await scanWithApiKey(files, ctl.signal, video);
+      else data = await sampleP.then((s) => { if (!s) throw { code: "not_granted" }; return s.json(samplePrompt(video), { images: files, signal: ctl.signal }); });
       showResult(data);
     } catch (err: any) {
       const c = ctl.signal.aborted ? "cancelled" : err && err.code;
@@ -182,15 +208,19 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
     }
   };
   function showResult(data: unknown) {
-    const items = normalise(data);
+    const raw = normalise(data);
+    const items = fillDates(video ? mergeRepeats(raw) : raw, todayIso());
     const seen = kitFrom(data).filter((k) => !state.kit[k.id]);
     if (seen.length) update((s) => { for (const k of seen) s.kit[k.id] = "photo"; });
     setScanned(items);
     const unsure = items.filter((i) => i.conf === "low").length;
     const kitMsg = seen.length ? ` Ticked off on your kit list: ${seen.map((k) => k.label.split(" (")[0]).join(", ")}.` : "";
+    const by = (f: string) => items.filter((i) => i.from === f).length;
+    const read = by("read") + by("some"), matched = by("match"), guessed = by("estimate");
+    const dates = [read && `read ${plural(read, "date", "dates")}`, matched && `copied ${matched} from matching packs`, guessed && `estimated ${guessed}`].filter(Boolean).join(", ");
     setMsg((items.length
-      ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}${items.some((i) => i.bb) ? `, and read ${plural(items.filter((i) => i.bb).length, "date", "dates")}` : ""}. Fix names, counts and dates, untick anything wrong, then add. Items with no date get an estimate you can change later.`
-      : "No food found. Try a closer photo with labels facing the camera.") + kitMsg);
+      ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}${dates ? `. Dates: ${dates}` : ""}. Fix names, counts and dates, untick anything wrong, then add.`
+      : video ? "No food found. Try again, moving slowly with labels facing the camera." : "No food found. Try a closer photo with labels facing the camera.") + kitMsg);
   }
   const pick = (model: string) => {
     sendVote(model).catch(() => {});
@@ -205,10 +235,10 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
   const addChosen = (again: boolean) => {
     const chosen = list.filter((s) => s.keep);
     const today = todayIso();
-    update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count, added: today, ...(s.bb ? { bb: s.bb } : {}) }); });
+    update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count, added: today, ...(s.bb ? { bb: s.bb } : {}), ...(s.bb && (s.from === "match" || s.from === "some") ? { bbFrom: s.from } : {}) }); });
     const dated = chosen.filter((s) => s.bb).length;
-    toast(`Added ${plural(chosen.length, "item", "items")} from your photos${dated ? `, ${dated} with dates` : ""}`);
-    if (again) { setFiles([]); setScanned(null); setCompared(null); setMsg("Added. Photograph the next shelf or pile."); }
+    toast(`Added ${plural(chosen.length, "item", "items")} from your ${video ? "video" : "photos"}${dated ? `, ${dated} with dates` : ""}`);
+    if (again) { setFiles([]); setVideo(false); setScanned(null); setCompared(null); setMsg(video ? "Added. Film or photograph the next shelf or pile." : "Added. Photograph the next shelf or pile."); }
     else { closeSheet(); go("store"); }
   };
 
@@ -219,25 +249,40 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
           <b>Photograph a pile of food</b>
           <span className="small muted">Pile it on a table or open the cupboard, labels facing you, and take one photo per shelf or pile. Claude finds every item and you check the list. Torches, radios and first aid kits are ticked off your Be Ready list too.</span>
           <div className="scan-pick">
-            <label className="file-label" htmlFor="photo-camera">{files.length ? "Add another photo" : "Take a photo"}
-              <input type="file" id="photo-camera" accept="image/*" capture="environment" disabled={files.length >= max} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+            <label className="file-label" htmlFor="photo-camera">{files.length && !video ? "Add another photo" : "Take a photo"}
+              <input type="file" id="photo-camera" accept="image/*" capture="environment" disabled={framing || (!video && files.length >= max)} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             </label>
             <label className="file-label alt" htmlFor="photo-input">Choose photos
-              <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp,image/heic" multiple disabled={files.length >= max} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp,image/heic" multiple disabled={framing || (!video && files.length >= max)} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             </label>
           </div>
+          {!compare && (
+            <div className="scan-video">
+              {VIDEO_ICON}
+              <div>
+                <b>Or film a short video</b>
+                <span className="small muted">Move slowly around the pile for 10 to 20 seconds, pausing on labels and dates. If you film one date on a stack of the same tins, it is used for them all.</span>
+              </div>
+              <label className="file-label alt" htmlFor="video-camera">{video ? "Film again" : "Record video"}
+                <input type="file" id="video-camera" accept="video/*" capture="environment" disabled={framing} onChange={(e) => { addVideo(e.target.files); e.target.value = ""; }} />
+              </label>
+              <label className="link-btn" htmlFor="video-input">Choose a video
+                <input type="file" id="video-input" accept="video/*" disabled={framing} onChange={(e) => { addVideo(e.target.files); e.target.value = ""; }} />
+              </label>
+            </div>
+          )}
           {files.length > 0 && (
             <div className="thumbs">{urls.map((u, i) => (
               <span className="thumb" key={u}>
-                <img src={u} alt={`Photo ${i + 1} to scan`} />
-                <button type="button" aria-label={`Remove photo ${i + 1}`} onClick={() => { setFiles(files.filter((_, n) => n !== i)); setMsg(""); }}>×</button>
+                <img src={u} alt={`${video ? "Video still" : "Photo"} ${i + 1} to scan`} />
+                <button type="button" aria-label={`Remove ${video ? "still" : "photo"} ${i + 1}`} onClick={() => { const rest = files.filter((_, n) => n !== i); setFiles(rest); if (!rest.length) setVideo(false); setMsg(""); }}>×</button>
               </span>
             ))}</div>
           )}
-          <span className="small muted">Up to {plural(max, "photo", "photos")} per scan{route === "hosted" && left !== null && !compare ? ` · ${plural(left, "photo scan", "photo scans")} left today` : ""}.</span>
+          <span className="small muted">{video ? `One video scan uses ${plural(Math.ceil(files.length / 2), "photo scan", "photo scans")}` : `Up to ${plural(max, "photo", "photos")} per scan`}{route === "hosted" && left !== null && !compare ? ` · ${plural(left, "photo scan", "photo scans")} left today` : ""}.</span>
           {canCompare && (
             <label className="compare-toggle small">
-              <input type="checkbox" checked={compare} onChange={(e) => { setCompare(e.target.checked); if (e.target.checked && files.length > 1) setFiles(files.slice(0, 1)); }} />
+              <input type="checkbox" checked={compare} onChange={(e) => { setCompare(e.target.checked); if (e.target.checked && video) { setFiles([]); setVideo(false); } else if (e.target.checked && files.length > 1) setFiles(files.slice(0, 1)); }} />
               Compare models on this photo (tester)
             </label>
           )}
@@ -251,9 +296,9 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
           <button className="btn primary block" type="submit" disabled={!!busy}>Save code and scan</button>
         </form>
       )}
-      {files.length > 0 && !scanned && !compared && !needCode && (
+      {files.length > 0 && !scanned && !compared && !needCode && !framing && (
         <>
-          <button className="btn primary block" disabled={!!busy} onClick={run}>{busy ? "Looking at your photos…" : compare ? "Compare models on this photo" : `Find food in ${plural(files.length, "photo", "photos")}`}</button>
+          <button className="btn primary block" disabled={!!busy} onClick={run}>{busy ? (video ? "Looking at your video…" : "Looking at your photos…") : compare ? "Compare models on this photo" : video ? "Find food in video" : `Find food in ${plural(files.length, "photo", "photos")}`}</button>
           {busy && <button className="btn block" onClick={() => busy.abort()}>Stop</button>}
         </>
       )}
@@ -272,8 +317,12 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
                       <span className="s">{s.pack ? `${s.pack} · ` : ""}{GROUPS[s.group].label}{s.cat ? "" : " · estimate"} {s.conf === "low" ? <span className="conf low">check</span> : <span className={`conf ${s.conf}`}>{s.conf}</span>}</span>
                       <label className="scan-bb">
                         <span>Best before</span>
-                        <input type="date" value={s.bb || ""} aria-label={`Best-before date for ${s.name}`} onChange={(e) => { const v = e.target.value; edit(i, (x) => { if (isIsoDate(v)) x.bb = v; else delete x.bb; }); }} />
+                        <input type="date" value={s.bb || ""} aria-label={`Best-before date for ${s.name}`} onChange={(e) => { const v = e.target.value; edit(i, (x) => { if (isIsoDate(v)) { x.bb = v; x.from = "you"; delete x.guess; } else { delete x.bb; x.from = "estimate"; } }); }} />
+                        {s.from && <span className={`date-src src-${s.from}`}>{s.from === "read" ? "read" : s.from === "some" ? "partly read" : s.from === "match" ? "matched" : s.from === "estimate" ? "estimate" : "yours"}</span>}
                       </label>
+                      {s.from && s.from !== "read" && s.from !== "you" && (
+                        <span className="date-note">{dateNote(s)}{s.from === "estimate" && s.guess ? `: about ${formatDate(s.guess)}` : ""}</span>
+                      )}
                     </div>
                     <div className="stepper">
                       <button onClick={() => edit(i, (x) => { x.count = Math.max(1, x.count - 1); })} aria-label={`Fewer ${s.name}`}>−</button>
@@ -287,7 +336,7 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
           )}
           {keep > 0 && <button className="btn primary block" onClick={() => addChosen(false)}>Add {plural(keep, "item", "items")} to store</button>}
           {keep > 0 && <button className="btn block" onClick={() => addChosen(true)}>Add and scan the next shelf</button>}
-          {!keep && <button className="btn primary block" onClick={() => { setFiles([]); setScanned(null); setMsg(""); }}>Try other photos</button>}
+          {!keep && <button className="btn primary block" onClick={() => { setFiles([]); setVideo(false); setScanned(null); setMsg(""); }}>Try again</button>}
           <button className="link-btn scan-missing" onClick={onMissing}>Something missing? Search the food list</button>
         </>
       )}

@@ -25,7 +25,7 @@ export function DueRow({ d }: { d: Due }) {
     toast(`${it.name} is on your shopping list`, { label: "Undo", run: () => update((s) => { C.restoreEaten(s, it, at); }) });
   };
   const fresh = () => {
-    update((s) => { const x = s.items.find((y) => y.uid === it.uid); if (x) { delete x.bb; x.added = today; } });
+    update((s) => { const x = s.items.find((y) => y.uid === it.uid); if (x) { delete x.bb; delete x.bbFrom; x.added = today; } });
     toast("Marked as fresh. Add the new date for an exact reminder", { label: "Add date", run: () => openSheet({ kind: "item", id: it.uid }) });
   };
   return (

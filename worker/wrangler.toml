@@ -14,6 +14,8 @@ SCAN_MODEL = "claude-haiku-5-5"
 SCAN_EFFORT = "medium"
 # Daily limits, counted in photos, reset at midnight UTC.
 PHOTOS_PER_SCAN = "3"
+# A video scan sends up to this many frames and uses one photo of the allowance per two frames.
+VIDEO_FRAMES = "6"
 DEVICE_DAILY_PHOTOS = "12"
 IP_DAILY_PHOTOS = "36"
 TOTAL_DAILY_PHOTOS = "300"

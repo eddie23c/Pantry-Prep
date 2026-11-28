@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { CORS, OFF_BEANS, onboard, PHOTO, SCAN_REPLY, tab } from "./helpers";
+import { CORS, VIDEO, VIDEO_REPLY, OFF_BEANS, onboard, PHOTO, SCAN_REPLY, tab } from "./helpers";
 
 test("first visit: welcome screens, then an empty store", async ({ page }) => {
   await page.goto("./");
@@ -179,7 +179,7 @@ test("photo scan: pile photo, invite code, review the list, add to store", async
   await expect(page.getByText("Found 3 products, 1 to check")).toBeVisible();
   expect(bodies.at(-1).images[0]).toMatch(/^\/9j\//);
   expect(bodies.at(-1).device).toMatch(/^[A-Za-z0-9-]{8,}$/);
-  await expect(page.getByText("and read 1 date")).toBeVisible();
+  await expect(page.getByText("Dates: read 1 date, estimated 2")).toBeVisible();
   await expect(page.getByLabel("Best-before date for Tuna chunks in spring water")).toHaveValue("2028-03-31");
   await page.getByRole("button", { name: "More Tuna chunks" }).click();
   await page.getByRole("checkbox", { name: "Keep Mystery tin" }).uncheck();
@@ -192,6 +192,37 @@ test("photo scan: pile photo, invite code, review the list, add to store", async
   await page.getByRole("button", { name: "Find food in 1 photo" }).click();
   await expect(page.getByText("Found 3 products")).toBeVisible();
   await expect(page.getByLabel("Invite code")).toHaveCount(0);
+});
+
+test("video scan: stills from one video, dates copied across matching packs, then saved", async ({ page }) => {
+  const bodies: any[] = [];
+  await page.route("https://scan.test/scan", async (r) => {
+    if (r.request().method() === "OPTIONS") return r.fulfill({ status: 204, headers: CORS });
+    bodies.push(r.request().postDataJSON());
+    return r.fulfill({ headers: CORS, json: { ...VIDEO_REPLY, remaining: 9 } });
+  });
+  await onboard(page);
+  await page.getByRole("button", { name: "Add food" }).click();
+  await expect(page.getByText("Or film a short video")).toBeVisible();
+  await page.locator("#video-input").setInputFiles(VIDEO);
+  await expect(page.getByText(/Took \d stills from your video/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("img", { name: "Video still 1 to scan" })).toBeVisible();
+  await page.getByRole("button", { name: "Find food in video" }).click();
+  await expect(page.getByText(/Found 4 products/)).toBeVisible();
+  const sent = bodies.at(-1);
+  expect(sent.video).toBe(true);
+  expect(sent.images.length).toBeGreaterThan(1);
+  expect(sent.images.length).toBeLessThanOrEqual(6);
+  expect(sent.images[0]).toMatch(/^\/9j\//);
+  await expect(page.getByText("Dates: read 2 dates, copied 1 from matching packs, estimated 1")).toBeVisible();
+  // 4 tins, date read on 1: the same date is used for the rest.
+  await expect(page.getByText("Read on 1 of 4, same date used for the rest")).toBeVisible();
+  // A second stack with no date visible takes it from the matching tins.
+  await expect(page.getByLabel("Best-before date for Chopped tomatoes", { exact: true }).nth(1)).toHaveValue("2027-09-30");
+  await expect(page.getByText("Not seen on these, so taken from a matching pack")).toBeVisible();
+  await expect(page.getByText(/No date seen, so estimated from the kind of food: about/)).toBeVisible();
+  await page.getByRole("button", { name: "Add 4 items to store" }).click();
+  await expect(page.locator("#screen-store [data-item]", { hasText: "Chopped tomatoes" }).first()).toBeVisible();
 });
 
 test("photo scan: daily limit message, and search is one tap away", async ({ page }) => {
