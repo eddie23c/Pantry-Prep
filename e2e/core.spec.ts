@@ -60,7 +60,7 @@ test("best-before date shows on the dashboard when it is close", async ({ page }
   await page.getByLabel("Best-before date").fill(soon);
   await page.getByRole("button", { name: "Close" }).click();
   await tab(page, "Dashboard");
-  await expect(page.getByRole("heading", { name: "Eat and replace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Use this month" })).toBeVisible();
 });
 
 test("eat and replace: Used puts it on the shopping list, buying it brings it back", async ({ page }) => {
@@ -74,12 +74,33 @@ test("eat and replace: Used puts it on the shopping list, buying it brings it ba
   await expect(page.locator("#screen-store [data-item]", { hasText: "Baked beans" })).toContainText("Use soon");
   await tab(page, "Dashboard");
   await page.getByRole("button", { name: "Used Baked beans, add to shopping list" }).click();
-  await expect(page.getByRole("heading", { name: "Eat and replace" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Use this month" })).toHaveCount(0);
   await expect(page.getByText("Replaces what you used")).toBeVisible();
   await page.getByRole("button", { name: "Mark Baked beans as bought" }).click();
   await expect(page.getByText("Replaces what you used")).toHaveCount(0);
   await tab(page, "Store");
   await expect(page.locator("#screen-store [data-item]", { hasText: "Baked beans" })).not.toContainText("Use soon");
+});
+
+test("use this month: badge on the Store tab opens a page grouped by week", async ({ page }) => {
+  await onboard(page, { example: true });
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("pantry-prep-v1")!);
+    const d = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+    s.items[0].bb = d(3); s.items[1].bb = d(10); s.items[2].bb = d(25); s.items[3].bb = d(-2);
+    localStorage.setItem("pantry-prep-v1", JSON.stringify(s));
+  });
+  await page.reload();
+  const storeTab = page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: /Store/ });
+  await expect(storeTab).toContainText("4");
+  await expect(storeTab).toHaveAccessibleName(/4 to use this month/);
+  await storeTab.click();
+  await page.locator("#rotate-strip").click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Use this month" })).toBeVisible();
+  for (const g of ["Past its date", "This week", "Next week", "Later this month"]) await expect(page.getByRole("heading", { name: g })).toBeVisible();
+  await page.locator('[data-group="week"]').getByRole("button", { name: /^Used / }).click();
+  await expect(page.getByRole("heading", { name: "This week" })).toHaveCount(0);
+  await expect(storeTab).toContainText("3");
 });
 
 test("web reminders: use-by dates go to a calendar file", async ({ page }) => {

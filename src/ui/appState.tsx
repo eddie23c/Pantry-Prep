@@ -14,6 +14,7 @@ export type SheetState =
   | { kind: "about" }
   | { kind: "diet" }
   | { kind: "feedback" }
+  | { kind: "rotate" }
   | { kind: "legal"; page: string };
 
 export interface ToastAction { label: string; run: () => void }

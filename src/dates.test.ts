@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, addMonths, checkReminderIcs, daysBetween, expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, KIT_CHECK_DAYS, kitCheckDue, nextCheck, shelfMonths, todayIso, useBy } from "./dates";
+import { addDays, addMonths, checkReminderIcs, daysBetween, expiring, expiryPhrase, expiryStatus, formatDate, isIsoDate, rotatePlan, KIT_CHECK_DAYS, kitCheckDue, nextCheck, shelfMonths, todayIso, useBy } from "./dates";
 import { fromCat } from "./storage";
 
 const today = "2026-11-26";
@@ -49,6 +49,13 @@ describe("best before", () => {
     expect(expiryPhrase("2027-05-01", today)).toBe("Best before 1 May 2027");
     expect(expiryPhrase("2026-12-06", today, true)).toBe("About 10 days left (estimated)");
     expect(expiryPhrase("2026-11-01", today, true)).toMatch(/^Probably past its best/);
+  });
+});
+
+describe("use this month", () => {
+  it("groups items due in the next 30 days by week, leaving out empty bands and later dates", () => {
+    const plan = rotatePlan([dated("tuna", "2026-11-20"), dated("oats", "2026-11-30"), dated("pb", "2026-12-20"), dated("raisins", "2027-06-01")], today);
+    expect(plan.map((g) => [g.id, g.items.map((d) => d.item.cat)])).toEqual([["past", ["tuna"]], ["week", ["oats"]], ["month", ["pb"]]]);
   });
 });
 

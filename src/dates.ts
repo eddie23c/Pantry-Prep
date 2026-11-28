@@ -97,6 +97,25 @@ export function expiring(items: StoreItem[], today: string) {
   };
 }
 
+export interface RotateGroup {
+  id: "past" | "week" | "next" | "month";
+  label: string;
+  items: Due[];
+}
+
+/** Everything to eat and rotate out in the next SOON_DAYS, in time bands, soonest first. Empty bands are left out. */
+export function rotatePlan(items: StoreItem[], today: string): RotateGroup[] {
+  const e = expiring(items, today);
+  const left = (d: Due) => daysBetween(today, d.date);
+  const groups: RotateGroup[] = [
+    { id: "past", label: "Past its date", items: e.expired },
+    { id: "week", label: "This week", items: e.soon.filter((d) => left(d) <= 7) },
+    { id: "next", label: "Next week", items: e.soon.filter((d) => left(d) > 7 && left(d) <= 14) },
+    { id: "month", label: "Later this month", items: e.soon.filter((d) => left(d) > 14) },
+  ];
+  return groups.filter((g) => g.items.length);
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "14 Mar 2027". */
