@@ -38,6 +38,10 @@ It installs to the home screen and works offline after the first visit.
 
 The app sends shrunk photos (1,400 px, about 300 KB each, up to 3 per scan) to a tiny Cloudflare Worker in `worker/`. The worker holds the Anthropic key, checks the daily limits and asks Claude Haiku 5.5 to list the food. Nobody using the app needs a key. People can still add their own Anthropic key on the Prepare tab for unlimited scans.
 
+**Video scans.** People can instead film a 10 to 20 second video moving around the pile. The phone picks up to 6 sharp stills spread across the video (`src/frames.ts`, 1,280 px each) and only those are sent, never the video. Claude is told they are frames of one pile, so each tin is counted once. A video scan uses one photo of the daily allowance per two stills (`VIDEO_FRAMES` in `worker/wrangler.toml`), so at most 3. Estimated cost with Haiku 5.5 is about two photos' worth (roughly 0.3p), since output tokens are about the same and the stills are smaller than photos.
+
+**Best-before dates from a scan.** Each product says how many packs Claude read the date on. In the review list every date is marked: **read** (on every pack), **partly read** (read on 1 of 4, used for the rest), **matched** (not visible, copied from an identical product in the same scan, the earliest if several) or **estimate** (none seen, typical shelf life from `SHELF_MONTHS`). Partly read and matched dates are saved with a note on the item so people know to check the packs.
+
 **Limits** (in `worker/wrangler.toml`, counted in photos, reset at midnight UTC): 12 per phone, 36 per internet address, 300 for everyone together. An optional invite code keeps strangers out.
 
 **Cost:** about $0.002 (0.15p) per photo with Haiku 5.5, so 1,000 photos is roughly £1.50. The 300-a-day total cap means the most it can ever spend is about 60p a day. Cloudflare's free plan covers the worker. Set a monthly spend limit in the Anthropic console as a backstop.
@@ -73,7 +77,8 @@ Each scan's token counts are logged in Cloudflare (**Workers → pantry-prep-sca
 | `src/barcode.ts`, `src/off.ts` | Barcode scanning and the Open Food Facts lookup (mapping tested) |
 | `src/allergens.ts` | The 14 UK allergens, diets and recipe filtering (tested) |
 | `src/print.ts` | The printable A4 store list and recipe cards (tested) |
-| `src/scan.ts`, `src/scanPrompt.ts`, `src/scanResult.ts` | Photo scanning (through the worker or an own key), the shared prompt, and turning replies into store items (tested) |
+| `src/scan.ts`, `src/scanPrompt.ts`, `src/scanResult.ts` | Photo scanning (through the worker or an own key), the shared prompt, and turning replies into store items, including filling in dates across matching packs (tested) |
+| `src/frames.ts` | Picking sharp stills from a short video on the phone for video scans (tested) |
 | `worker/` | The scan worker on Cloudflare: key, daily limits, Claude call (rules tested) |
 | `src/legal.ts` | Privacy notice, terms and accessibility statement |
 | `e2e/` | Playwright end-to-end tests and axe accessibility checks |

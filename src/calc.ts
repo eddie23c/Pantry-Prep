@@ -26,6 +26,9 @@ export interface StoreItem {
   count: number;
   /** Best-before date as "YYYY-MM-DD", if the person entered one. */
   bb?: string;
+  /** Set when a scan did not see this pack's date and took it from an identical pack ("match"),
+   *  or read it on only some of the packs ("some"). Cleared when the person types a date. */
+  bbFrom?: "match" | "some";
   /** Barcode, for items added by scanning one. */
   code?: string;
   /** The day it was added to the store, "YYYY-MM-DD". Used to estimate a best-before date when none is entered. */

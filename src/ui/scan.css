@@ -20,3 +20,14 @@
 .tally td { text-align: right; }
 .scan-bb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .74rem; color: var(--muted); margin-top: 2px; }
 .scan-bb input { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 3px 6px; font: 600 .78rem var(--font); min-height: 30px; }
+.scan-video { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; text-align: left; width: 100%; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+.scan-video > svg { width: 28px; height: 28px; color: var(--brand); }
+.scan-video > div { display: flex; flex-direction: column; gap: 2px; }
+.scan-video > .file-label { grid-column: 1 / -1; justify-self: center; position: relative; }
+.scan-video > .link-btn { grid-column: 1 / -1; justify-self: center; position: relative; }
+.scan-video input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.date-src { font-size: .62rem; font-weight: 800; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+.date-src.src-read, .date-src.src-you { background: color-mix(in srgb, var(--fibre) 16%, transparent); color: var(--fibre-ink); }
+.date-src.src-some, .date-src.src-match { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn-ink); }
+.date-src.src-estimate { background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+.date-note { display: block; font-size: .72rem; color: var(--muted); margin-top: 2px; }

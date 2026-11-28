@@ -34,3 +34,16 @@ export const SCAN_REPLY = {
   ],
   kit: ["torch"],
 };
+
+/** A short real video (WebM, plays in test Chromium), enough for the app to take stills from. */
+export const VIDEO = "e2e/fixtures/pile.webm";
+
+export const VIDEO_REPLY = {
+  food: [
+    { id: "", name: "Chopped tomatoes", pack: "400 g tin", count: 4, kind: "tomatoes", group: "fruitveg", kcal: 80, protein: 4, fibre: 3, litres: 0, portions: 2, bb: "2027-09-30", seen: 1, confidence: "high" },
+    { id: "", name: "Chopped tomatoes", pack: "400 g tin", count: 2, kind: "tomatoes", group: "fruitveg", kcal: 80, protein: 4, fibre: 3, litres: 0, portions: 2, bb: "", seen: 0, confidence: "medium" },
+    { id: "tuna", name: "Tuna chunks in spring water", pack: "145 g tin", count: 2, kind: "fish", group: "protein", kcal: 110, protein: 25, fibre: 0, litres: 0, portions: 1, bb: "2028-03-31", seen: 2, confidence: "high" },
+    { id: "", name: "Long grain rice", pack: "1 kg bag", count: 1, kind: "rice", group: "starchy", kcal: 3500, protein: 70, fibre: 10, litres: 0, portions: 12, bb: "", seen: 0, confidence: "medium" },
+  ],
+  kit: [],
+};
