@@ -20,7 +20,7 @@ function UseSoon() {
   const fresh = (uid: string) => {
     const it = state.items.find((x) => x.uid === uid);
     if (!it) return;
-    update((s) => { const x = s.items.find((y) => y.uid === uid); if (x) { delete x.bb; x.added = today; } });
+    update((s) => { const x = s.items.find((y) => y.uid === uid); if (x) { delete x.bb; delete x.bbFrom; x.added = today; } });
     toast("Marked as fresh. Add the new date for an exact reminder", { label: "Add date", run: () => openSheet({ kind: "item", id: uid }) });
   };
   return (

@@ -1,16 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { allowedOrigin, codeMatches, compareModels, costUsd, decideTake, parseScanRequest, type Limit } from "./rules";
+import { allowedOrigin, codeMatches, compareModels, costUsd, decideTake, parseScanRequest, photoCost, type Limit } from "./rules";
 
 const jpeg = "/9j/4AAQSkZJRg";
 
 describe("scan worker rules", () => {
   it("accepts a good request and rejects bad ones", () => {
-    expect(parseScanRequest({ device: "abcd-1234", images: [jpeg], code: " Beta " }, 3)).toEqual({ device: "abcd-1234", code: "Beta", images: [jpeg] });
+    expect(parseScanRequest({ device: "abcd-1234", images: [jpeg], code: " Beta " }, 3)).toEqual({ device: "abcd-1234", code: "Beta", images: [jpeg], video: false });
     expect(parseScanRequest({ device: "x", images: [jpeg] }, 3)).toMatchObject({ status: 400 });
     expect(parseScanRequest({ device: "abcd-1234", images: [] }, 3)).toMatchObject({ status: 400 });
     expect(parseScanRequest({ device: "abcd-1234", images: ["iVBOR"] }, 3)).toMatchObject({ message: "Photos must be JPEG" });
     expect(parseScanRequest({ device: "abcd-1234", images: [jpeg, jpeg, jpeg, jpeg] }, 3)).toMatchObject({ error: "too_big" });
     expect(parseScanRequest(null, 3)).toMatchObject({ status: 400 });
+  });
+
+  it("takes more frames from a video scan, and charges one photo per two frames", () => {
+    const six = Array(6).fill(jpeg);
+    const r = parseScanRequest({ device: "abcd-1234", images: six, video: true }, 3, 6);
+    expect(r).toMatchObject({ video: true, images: six });
+    expect(parseScanRequest({ device: "abcd-1234", images: [...six, jpeg], video: true }, 3, 6)).toMatchObject({ error: "too_big" });
+    expect(parseScanRequest({ device: "abcd-1234", images: six }, 3, 6)).toMatchObject({ error: "too_big" });
+    expect(photoCost({ images: six, video: true })).toBe(3);
+    expect(photoCost({ images: [jpeg, jpeg, jpeg, jpeg, jpeg], video: true })).toBe(3);
+    expect(photoCost({ images: [jpeg, jpeg], video: false })).toBe(2);
   });
 
   it("only lets listed sites call it", () => {

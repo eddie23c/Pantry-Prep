@@ -7,7 +7,7 @@
 // models side by side (COMPARE_MODELS), pick the most accurate list, and see a running tally.
 import Anthropic from "@anthropic-ai/sdk";
 import { SCAN_SCHEMA, scanPrompt } from "../../src/scanPrompt";
-import { allowedOrigin, codeMatches, compareModels, costUsd, dayKey, decideTake, parseScanRequest, type Limit } from "./rules";
+import { allowedOrigin, codeMatches, compareModels, costUsd, dayKey, decideTake, parseScanRequest, photoCost, type Limit } from "./rules";
 
 export interface Env {
   ANTHROPIC_API_KEY: string;
@@ -18,6 +18,8 @@ export interface Env {
   SCAN_MODEL: string;
   SCAN_EFFORT: string;
   PHOTOS_PER_SCAN: string;
+  /** Frames a video scan may send. */
+  VIDEO_FRAMES?: string;
   DEVICE_DAILY_PHOTOS: string;
   IP_DAILY_PHOTOS: string;
   TOTAL_DAILY_PHOTOS: string;
@@ -30,6 +32,7 @@ export interface Env {
 }
 
 const PROMPT = scanPrompt();
+const VIDEO_PROMPT = scanPrompt({ video: true });
 const int = (v: string | undefined, d: number) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : d);
 
 function json(body: unknown, status: number, origin: string | null): Response {
@@ -54,7 +57,7 @@ async function votes(env: Env, op: "record" | "vote" | "tally", body: unknown): 
 const effortOf = (env: Env) => (["low", "medium", "high"].includes(env.SCAN_EFFORT) ? env.SCAN_EFFORT : "medium") as "low" | "medium" | "high";
 
 /** One Claude call. `fallback` lets a declined request run on another model (not used when comparing). */
-async function scanOnce(client: Anthropic, model: string, effort: "low" | "medium" | "high", images: string[], fallback: boolean) {
+async function scanOnce(client: Anthropic, model: string, effort: "low" | "medium" | "high", images: string[], fallback: boolean, video = false) {
   const started = Date.now();
   const response = await client.beta.messages.create({
     model,
@@ -66,7 +69,7 @@ async function scanOnce(client: Anthropic, model: string, effort: "low" | "mediu
         role: "user",
         content: [
           ...images.map((data) => ({ type: "image" as const, source: { type: "base64" as const, media_type: "image/jpeg" as const, data } })),
-          { type: "text" as const, text: PROMPT },
+          { type: "text" as const, text: video ? VIDEO_PROMPT : PROMPT },
         ],
       },
     ],
@@ -74,7 +77,7 @@ async function scanOnce(client: Anthropic, model: string, effort: "low" | "mediu
   const seconds = (Date.now() - started) / 1000;
   const { input_tokens: input, output_tokens: output } = response.usage;
   // One log line per call, visible in the Cloudflare dashboard, for the real cost per scan.
-  console.log(JSON.stringify({ scan: { photos: images.length, model: response.model, stop: response.stop_reason, input, output, seconds } }));
+  console.log(JSON.stringify({ scan: { photos: images.length, video, model: response.model, stop: response.stop_reason, input, output, seconds } }));
   if (response.stop_reason === "refusal") return { refused: true as const, model: response.model, seconds, input, output };
   const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
   const data = JSON.parse(text) as { food: unknown[]; kit: unknown[] };
@@ -112,7 +115,7 @@ export default {
       return json({ error: "bad_request", message: "Expected JSON" }, 400, origin);
     }
     if (url.pathname !== "/scan") return tester(url.pathname, body as Record<string, unknown>, env, origin);
-    const parsed = parseScanRequest(body, int(env.PHOTOS_PER_SCAN, 3));
+    const parsed = parseScanRequest(body, int(env.PHOTOS_PER_SCAN, 3), int(env.VIDEO_FRAMES, 6));
     if ("error" in parsed) return json({ error: parsed.error, message: parsed.message }, parsed.status, origin);
 
     if (env.ACCESS_CODE) {
@@ -126,7 +129,7 @@ export default {
       { key: `ip:${ip}`, max: int(env.IP_DAILY_PHOTOS, 36), error: "daily_limit" },
       { key: "total", max: int(env.TOTAL_DAILY_PHOTOS, 300), error: "busy" },
     ];
-    const n = parsed.images.length;
+    const n = photoCost(parsed);
     const taken = await quota(env, "take", limits, n);
     if (!taken.ok) {
       const message = taken.error === "busy" ? "Photo scanning is full for today" : "No photo scans left today on this phone";
@@ -135,7 +138,7 @@ export default {
 
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, baseURL: env.ANTHROPIC_BASE_URL || undefined, maxRetries: 1 });
     try {
-      const r = await scanOnce(client, env.SCAN_MODEL || "claude-haiku-5-5", effortOf(env), parsed.images, true);
+      const r = await scanOnce(client, env.SCAN_MODEL || "claude-haiku-5-5", effortOf(env), parsed.images, true, parsed.video);
       if (r.refused) {
         await quota(env, "give", limits, n);
         return json({ error: "refused", message: "Claude could not scan these photos", remaining: taken.remaining + n }, 422, origin);

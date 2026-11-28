@@ -7,22 +7,35 @@ export interface ScanRequest {
   device: string;
   code: string;
   images: string[];
+  /** The images are frames from one short video of a single pile. */
+  video: boolean;
 }
 
 export type Invalid = { error: string; message: string; status: number };
 
-export function parseScanRequest(body: unknown, maxPhotos: number): ScanRequest | Invalid {
+/**
+ * `maxFrames`: how many frames a video scan may send. Frames are smaller than photos
+ * (1280 px, not 1400) and overlap, so a video scan is charged by photoCost, not per frame.
+ */
+export function parseScanRequest(body: unknown, maxPhotos: number, maxFrames = 6): ScanRequest | Invalid {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const device = typeof b.device === "string" ? b.device : "";
   if (!/^[A-Za-z0-9-]{8,64}$/.test(device)) return { error: "bad_request", message: "Missing device id", status: 400 };
   const images = Array.isArray(b.images) ? b.images : [];
+  const video = b.video === true;
   if (!images.length) return { error: "bad_request", message: "No photos", status: 400 };
-  if (images.length > maxPhotos) return { error: "too_big", message: `Up to ${maxPhotos} photos per scan`, status: 413 };
+  if (video && images.length > maxFrames) return { error: "too_big", message: `Up to ${maxFrames} video frames per scan`, status: 413 };
+  if (!video && images.length > maxPhotos) return { error: "too_big", message: `Up to ${maxPhotos} photos per scan`, status: 413 };
   for (const img of images) {
     if (typeof img !== "string" || !img.startsWith("/9j/")) return { error: "bad_request", message: "Photos must be JPEG", status: 400 };
     if (img.length > MAX_IMAGE_CHARS) return { error: "too_big", message: "Photo too large", status: 413 };
   }
-  return { device, code: typeof b.code === "string" ? b.code.trim().slice(0, 64) : "", images: images as string[] };
+  return { device, code: typeof b.code === "string" ? b.code.trim().slice(0, 64) : "", images: images as string[], video };
+}
+
+/** How many photos of today's allowance a scan uses: one per photo, or one per two video frames. */
+export function photoCost(r: Pick<ScanRequest, "images" | "video">): number {
+  return r.video ? Math.ceil(r.images.length / 2) : r.images.length;
 }
 
 export function allowedOrigin(origin: string | null, list: string): string | null {
