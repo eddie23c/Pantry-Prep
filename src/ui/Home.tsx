@@ -1,53 +1,10 @@
 import * as C from "../calc";
 import { CAT, GROUPS } from "../data";
-import { expiring, expiryPhrase, formatDate, kitCheckDue, todayIso } from "../dates";
+import { formatDate, kitCheckDue, todayIso } from "../dates";
 import { fromCat, uid } from "../storage";
 import { addItem, CountUp, fmt, GCOL, GroupDot, LEVEL_WORD, plural, RecipeCard, Ring, sortedRecipes } from "./common";
 import { useApp } from "./appState";
-
-function UseSoon() {
-  const { state, update, openSheet, toast } = useApp();
-  const today = todayIso();
-  const e = expiring(state.items, today), list = [...e.expired, ...e.soon];
-  if (!list.length) return null;
-  const used = (uid: string) => {
-    const it = state.items.find((x) => x.uid === uid);
-    if (!it) return;
-    const at = state.items.indexOf(it);
-    update((s) => { C.eatUp(s, uid); });
-    toast(`${it.name} is on your shopping list`, { label: "Undo", run: () => update((s) => { C.restoreEaten(s, it, at); }) });
-  };
-  const fresh = (uid: string) => {
-    const it = state.items.find((x) => x.uid === uid);
-    if (!it) return;
-    update((s) => { const x = s.items.find((y) => y.uid === uid); if (x) { delete x.bb; x.added = today; } });
-    toast("Marked as fresh. Add the new date for an exact reminder", { label: "Add date", run: () => openSheet({ kind: "item", id: uid }) });
-  };
-  return (
-    <div className="card" id="use-soon">
-      <div className="card-head"><h2>Eat and replace</h2><span className={`status-chip st-${e.expired.length ? "bad" : "warn"}`}>{plural(list.length, "item", "items")}</span></div>
-      <p className="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up. Ate it? Tap Used and it goes on your shopping list.</p>
-      <div className="rows">
-        {list.slice(0, 6).map((d) => {
-          const tone = d.status === "expired" ? "bad" : "warn", it = d.item;
-          return (
-            <div className="row-item use-row" key={it.uid}>
-              <div className="dot" aria-hidden="true" style={{ background: `color-mix(in srgb,var(--${tone}) 15%,transparent)`, color: `var(--${tone}-ink)` }}>!</div>
-              <button className="row-main row-btn" data-item={it.uid} onClick={() => openSheet({ kind: "item", id: it.uid })}>
-                <span className="t">{it.count > 1 ? `${it.count} × ` : ""}{it.name}</span><span className="s">{expiryPhrase(d.date, today, d.estimated)}</span>
-              </button>
-              <div className="use-acts">
-                <button className="btn small-btn" aria-label={`Used ${it.name}, add to shopping list`} onClick={() => used(it.uid)}>Used</button>
-                <button className="btn small-btn" aria-label={`Replaced ${it.name} with a fresh one`} onClick={() => fresh(it.uid)}>Replaced</button>
-              </div>
-            </div>
-          );
-        })}
-        {list.length > 6 && <p className="empty-line">And {list.length - 6} more in your store.</p>}
-      </div>
-    </div>
-  );
-}
+import { UseSoon } from "./Rotate";
 
 function Restock() {
   const { state, update, toast } = useApp();
