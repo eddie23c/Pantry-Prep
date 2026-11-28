@@ -333,3 +333,21 @@ a { color: var(--brand); }
 .feedback-text { width: 100%; min-height: 140px; font: inherit; padding: 12px; border-radius: 12px; border: 1px solid var(--line, #ccc); background: var(--card, transparent); color: var(--ink); resize: vertical; box-sizing: border-box; }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .toggle-row input { width: 24px; height: 24px; accent-color: var(--brand); flex: none; }
+
+/* Eat and replace: Used / Replaced buttons beside each item */
+.use-acts { display: flex; gap: 6px; align-items: center; }
+.small-btn { padding: 6px 10px; font-size: .78rem; min-height: 36px; }
+@media (max-width: 380px) {
+  .use-row { grid-template-columns: auto 1fr; }
+  .use-row .use-acts { grid-column: 2; }
+}
+
+/* "Use this month" indicator: badge on the Store tab and a strip at the top of the Store */
+.tab-icon { position: relative; display: grid; place-items: center; }
+.tab-badge { position: absolute; top: -5px; right: -11px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: #1d1405; font-size: .64rem; font-weight: 800; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--card); }
+.tab-badge.bad { background: var(--bad); color: #fff; }
+.rotate-strip { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; text-align: left; border: 0; border-radius: 16px; padding: 12px 16px; margin-bottom: 12px; cursor: pointer; font: inherit; background: color-mix(in srgb, var(--warn) 16%, var(--card)); color: var(--warn-ink); }
+.rotate-strip.bad { background: color-mix(in srgb, var(--bad) 14%, var(--card)); color: var(--bad-ink); }
+.rotate-strip > span:first-child { display: grid; gap: 2px; }
+.rotate-strip > span:last-child { font-size: 1.4rem; font-weight: 800; }
+.rotate-group { margin-top: 12px; }

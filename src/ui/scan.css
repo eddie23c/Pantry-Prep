@@ -18,3 +18,5 @@
 .tally table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .tally th, .tally td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); }
 .tally td { text-align: right; }
+.scan-bb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .74rem; color: var(--muted); margin-top: 2px; }
+.scan-bb input { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 3px 6px; font: 600 .78rem var(--font); min-height: 30px; }

@@ -1,35 +1,31 @@
 import * as C from "../calc";
 import { CAT, GROUPS } from "../data";
-import { expiring, expiryPhrase, expiryStatus, formatDate, kitCheckDue, todayIso } from "../dates";
-import { fromCat } from "../storage";
+import { formatDate, kitCheckDue, todayIso } from "../dates";
+import { fromCat, uid } from "../storage";
 import { addItem, CountUp, fmt, GCOL, GroupDot, LEVEL_WORD, plural, RecipeCard, Ring, sortedRecipes } from "./common";
 import { useApp } from "./appState";
+import { UseSoon } from "./Rotate";
 
-function UseSoon() {
-  const { state, openSheet } = useApp();
-  const today = todayIso();
-  const e = expiring(state.items, today), list = [...e.expired, ...e.soon];
+function Restock() {
+  const { state, update, toast } = useApp();
+  const list = state.restock || [];
   if (!list.length) return null;
   return (
-    <div className="card">
-      <div className="card-head"><h2>Eat and replace</h2><span className={`status-chip st-${e.expired.length ? "bad" : "warn"}`}>{plural(list.length, "item", "items")}</span></div>
-      <p className="small muted">Use these in a meal soon and buy a fresh one to keep your store topped up.</p>
-      <div className="rows">
-        {list.slice(0, 5).map((it) => {
-          const tone = expiryStatus(it.bb, today) === "expired" ? "bad" : "warn";
-          return (
-            <div className="row-item" key={it.uid}>
-              <div className="dot" aria-hidden="true" style={{ background: `color-mix(in srgb,var(--${tone}) 15%,transparent)`, color: `var(--${tone}-ink)` }}>!</div>
-              <button className="row-main row-btn" data-item={it.uid} onClick={() => openSheet({ kind: "item", id: it.uid })}>
-                <span className="t">{it.name}</span><span className="s">{expiryPhrase(it.bb!, today)}</span>
-              </button>
-              <span />
-            </div>
-          );
-        })}
-        {list.length > 5 && <p className="empty-line">And {list.length - 5} more in your store.</p>}
-      </div>
-    </div>
+    <>
+      {list.map((r) => (
+        <div className="row-item" key={"r" + r.uid}>
+          <GroupDot group={r.group} tint={16}><span className="num">{r.count}×</span></GroupDot>
+          <div className="row-main"><span className="t">{r.name}</span><span className="s">{r.pack ? `${r.pack} · ` : ""}Replaces what you used</span></div>
+          <div className="use-acts">
+            <button className="add-round" aria-label={`Mark ${r.name} as bought`} onClick={() => {
+              update((s) => { C.dropRestock(s, r.uid); s.items.push({ ...r, uid: uid(), added: todayIso() }); });
+              toast(`Logged ${r.count} × ${r.name}. Add its date from the Store tab`);
+            }}>+</button>
+            <button className="link-btn" aria-label={`Not replacing ${r.name}`} onClick={() => update((s) => { C.dropRestock(s, r.uid); })}>Skip</button>
+          </div>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -108,8 +104,9 @@ export function Home() {
       <UseSoon />
 
       <div className="card">
-        <div className="card-head"><h2>Top up</h2><span className="small muted">{shop.length ? "Tap + when bought" : ""}</span></div>
+        <div className="card-head"><h2>Top up</h2><span className="small muted">{shop.length || state.restock?.length ? "Tap + when bought" : ""}</span></div>
         <div className="rows">
+          <Restock />
           {shop.length ? shop.map((s) => {
             const c = CAT[s.id];
             return (
@@ -119,7 +116,7 @@ export function Home() {
                 <button className="add-round" aria-label={`Mark ${c.name} as bought`} onClick={() => { update((st) => addItem(st, fromCat(s.id, s.n))); toast(`Logged ${s.n} × ${c.name}`); }}>+</button>
               </div>
             );
-          }) : <p className="empty-line">{h.days === 3 ? "Three" : h.days} days, sorted. Your store covers every target.</p>}
+          }) : state.restock?.length ? null : <p className="empty-line">{h.days === 3 ? "Three" : h.days} days, sorted. Your store covers every target.</p>}
         </div>
       </div>
 

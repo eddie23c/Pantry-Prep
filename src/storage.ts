@@ -2,7 +2,7 @@
 // Backup and restore use a JSON file the person keeps themselves.
 import type { AppState, StoreItem } from "./calc";
 import { CAT, EXAMPLE, GROUPS, type GroupId } from "./data";
-import { isIsoDate } from "./dates";
+import { isIsoDate, todayIso } from "./dates";
 import { ALLERGENS, DIETS, type AllergenId, type Diet } from "./allergens";
 
 const KEY = "pantry-prep-v1";
@@ -19,6 +19,7 @@ export function fromCat(id: string, count: number): StoreItem {
   return {
     uid: uid(), cat: id, name: c.name, pack: c.pack, group: c.group, kind: c.kind,
     kcal: c.kcal, protein: c.protein, fibre: c.fibre, portions: c.portions, litres: c.litres || 0, count,
+    added: todayIso(),
   };
 }
 
@@ -40,31 +41,34 @@ const clamp = (v: unknown, lo: number, hi: number, d: number) => {
   return Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : d));
 };
 
+function cleanItem(it: any): StoreItem[] {
+  if (!it || typeof it !== "object") return [];
+  const group: GroupId = it.group in GROUPS ? it.group : "other";
+  return [{
+    uid: typeof it.uid === "string" ? it.uid.slice(0, 40) : uid(),
+    cat: typeof it.cat === "string" && CAT[it.cat] ? it.cat : null,
+    name: String(it.name ?? "Item").slice(0, 80),
+    pack: String(it.pack ?? "").slice(0, 30),
+    group,
+    kind: typeof it.kind === "string" ? it.kind.slice(0, 30) : null,
+    kcal: clamp(it.kcal, 0, 10000, 0),
+    protein: clamp(it.protein, 0, 1000, 0),
+    fibre: clamp(it.fibre, 0, 500, 0),
+    portions: clamp(it.portions, 0, 100, 0),
+    litres: clamp(it.litres, 0, 50, 0),
+    count: Math.round(clamp(it.count, 1, 999, 1)),
+    ...(isIsoDate(it.bb) ? { bb: it.bb } : {}),
+    ...(typeof it.code === "string" && /^\d{8,14}$/.test(it.code) ? { code: it.code } : {}),
+    ...(isIsoDate(it.added) ? { added: it.added } : {}),
+  }];
+}
+
 /** Accepts anything (a stored value or an imported file) and returns a safe state, or null. */
 export function sanitise(raw: unknown): AppState | null {
   if (!raw || typeof raw !== "object") return null;
   const s = raw as Record<string, any>;
   if (!Array.isArray(s.items) || !s.house || typeof s.house !== "object") return null;
-  const items: StoreItem[] = s.items.slice(0, 500).flatMap((it: any): StoreItem[] => {
-    if (!it || typeof it !== "object") return [];
-    const group: GroupId = it.group in GROUPS ? it.group : "other";
-    return [{
-      uid: typeof it.uid === "string" ? it.uid.slice(0, 40) : uid(),
-      cat: typeof it.cat === "string" && CAT[it.cat] ? it.cat : null,
-      name: String(it.name ?? "Item").slice(0, 80),
-      pack: String(it.pack ?? "").slice(0, 30),
-      group,
-      kind: typeof it.kind === "string" ? it.kind.slice(0, 30) : null,
-      kcal: clamp(it.kcal, 0, 10000, 0),
-      protein: clamp(it.protein, 0, 1000, 0),
-      fibre: clamp(it.fibre, 0, 500, 0),
-      portions: clamp(it.portions, 0, 100, 0),
-      litres: clamp(it.litres, 0, 50, 0),
-      count: Math.round(clamp(it.count, 1, 999, 1)),
-      ...(isIsoDate(it.bb) ? { bb: it.bb } : {}),
-      ...(typeof it.code === "string" && /^\d{8,14}$/.test(it.code) ? { code: it.code } : {}),
-    }];
-  });
+  const items: StoreItem[] = s.items.slice(0, 500).flatMap(cleanItem);
   const kit: AppState["kit"] = {};
   if (s.kit && typeof s.kit === "object") {
     for (const [k, v] of Object.entries(s.kit)) if (v === "hand" || v === "photo") kit[k.slice(0, 30)] = v;
@@ -88,6 +92,7 @@ export function sanitise(raw: unknown): AppState | null {
     onboarded: s.onboarded === undefined ? true : Boolean(s.onboarded),
     ...(isIsoDate(s.kitChecked) ? { kitChecked: s.kitChecked } : {}),
     ...(s.baby === true ? { baby: true } : {}),
+    ...(Array.isArray(s.restock) && s.restock.length ? { restock: s.restock.slice(0, 100).flatMap(cleanItem) } : {}),
   };
 }
 

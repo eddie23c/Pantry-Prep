@@ -28,9 +28,9 @@ export const PHOTO = "e2e/fixtures/shelf.png";
 
 export const SCAN_REPLY = {
   food: [
-    { id: "tuna", name: "Tuna chunks in spring water", pack: "145 g tin", count: 3, kind: "fish", group: "protein", kcal: 110, protein: 25, fibre: 0, litres: 0, portions: 1, confidence: "high" },
-    { id: "", name: "Mystery tin", pack: "400 g tin", count: 1, kind: "", group: "other", kcal: 200, protein: 5, fibre: 2, litres: 0, portions: 0, confidence: "low" },
-    { id: "", name: "Oat biscuits", pack: "300 g pack", count: 2, kind: "", group: "starchy", kcal: 1400, protein: 25, fibre: 20, litres: 0, portions: 6, confidence: "medium" },
+    { id: "tuna", name: "Tuna chunks in spring water", pack: "145 g tin", count: 3, kind: "fish", group: "protein", kcal: 110, protein: 25, fibre: 0, litres: 0, portions: 1, bb: "2028-03-31", confidence: "high" },
+    { id: "", name: "Mystery tin", pack: "400 g tin", count: 1, kind: "", group: "other", kcal: 200, protein: 5, fibre: 2, litres: 0, portions: 0, bb: "", confidence: "low" },
+    { id: "", name: "Oat biscuits", pack: "300 g pack", count: 2, kind: "", group: "starchy", kcal: 1400, protein: 25, fibre: 20, litres: 0, portions: 6, bb: "", confidence: "medium" },
   ],
   kit: ["torch"],
 };

@@ -9,6 +9,7 @@ import { Prepare } from "./Prepare";
 import { Recipes } from "./Recipes";
 import { AboutSheet, DietSheet, FeedbackSheet, ItemSheet, LegalSheet, RecipeSheet } from "./Sheets";
 import { Store } from "./Store";
+import { RotateSheet, useRotateCount } from "./Rotate";
 import { useApp, type Screen } from "./appState";
 
 const TITLES: Record<Screen, string> = { home: "Your store", store: "Food store", recipes: "Recipes", prepare: "Be prepared" };
@@ -43,14 +44,18 @@ const ICONS: Record<Screen, ReactElement> = {
 
 function TabBar({ inert }: { inert: boolean }) {
   const { screen, go, openSheet } = useApp();
-  const tab = (s: Screen, label: string) => (
-    <button className="tab" data-go={s} aria-current={screen === s ? "page" : undefined} onClick={() => go(s)}>{ICONS[s]}{label}</button>
+  const due = useRotateCount();
+  const tab = (s: Screen, label: string, badge?: { n: number; bad: boolean; sr: string }) => (
+    <button className="tab" data-go={s} aria-current={screen === s ? "page" : undefined} onClick={() => go(s)}>
+      <span className="tab-icon">{ICONS[s]}{badge && badge.n > 0 && <span className={`tab-badge${badge.bad ? " bad" : ""}`} aria-hidden="true">{badge.n > 9 ? "9+" : badge.n}</span>}</span>
+      {label}{badge && badge.n > 0 && <span className="sr-only">, {badge.sr}</span>}
+    </button>
   );
   return (
     <nav className="tabbar" aria-label="Main" inert={inert}>
       <div className="tabbar-inner">
         {tab("home", "Dashboard")}
-        {tab("store", "Store")}
+        {tab("store", "Store", { n: due.count, bad: due.past, sr: `${due.count} to use this month` })}
         <button className="fab" id="fab" aria-label="Add food" onClick={() => openSheet({ kind: "add" })}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         </button>
@@ -71,6 +76,7 @@ function CurrentSheet() {
     case "about": return <AboutSheet />;
     case "diet": return <DietSheet />;
     case "feedback": return <FeedbackSheet />;
+    case "rotate": return <RotateSheet />;
     case "legal": return <LegalSheet page={sheet.page} />;
   }
 }

@@ -6,6 +6,7 @@ import { getApiKey, getInviteCode, getTesterCode, MAX_PHOTOS, SCAN_URL, ScanErro
 import { CompareResults } from "./Compare";
 import { kitFrom, normalise, samplePrompt, type ScannedItem } from "../scanResult";
 import { fromCat, uid } from "../storage";
+import { isIsoDate, todayIso } from "../dates";
 import { addItem, fmt, GroupDot, GSHORT, plural } from "./common";
 import { Sheet } from "./Sheets";
 import { useApp, type AddMode } from "./appState";
@@ -59,7 +60,7 @@ function BarcodePane() {
   host.current.add = (d, n) => update((s) => {
     const ex = s.items.find((x) => x.code === d.code && !x.bb);
     if (ex) ex.count += n;
-    else s.items.push({ uid: uid(), cat: null, code: d.code, name: d.name, pack: d.pack, group: d.group, kind: d.kind, kcal: d.kcal, protein: d.protein, fibre: d.fibre, portions: d.portions, litres: d.litres, count: n });
+    else s.items.push({ uid: uid(), cat: null, code: d.code, name: d.name, pack: d.pack, group: d.group, kind: d.kind, kcal: d.kcal, protein: d.protein, fibre: d.fibre, portions: d.portions, litres: d.litres, count: n, added: todayIso() });
   });
   useEffect(() => {
     const node = el.current!;
@@ -188,7 +189,7 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
     const unsure = items.filter((i) => i.conf === "low").length;
     const kitMsg = seen.length ? ` Ticked off on your kit list: ${seen.map((k) => k.label.split(" (")[0]).join(", ")}.` : "";
     setMsg((items.length
-      ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}. Fix names and counts, untick anything wrong, then add.`
+      ? `Found ${plural(items.length, "product", "products")}${unsure ? `, ${unsure} to check` : ""}${items.some((i) => i.bb) ? `, and read ${plural(items.filter((i) => i.bb).length, "date", "dates")}` : ""}. Fix names, counts and dates, untick anything wrong, then add. Items with no date get an estimate you can change later.`
       : "No food found. Try a closer photo with labels facing the camera.") + kitMsg);
   }
   const pick = (model: string) => {
@@ -203,8 +204,10 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
   const edit = (i: number, fn: (s: ScannedItem) => void) => setScanned((all) => (all || []).map((s, n) => { if (n !== i) return s; const c = { ...s }; fn(c); return c; }));
   const addChosen = (again: boolean) => {
     const chosen = list.filter((s) => s.keep);
-    update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count }); });
-    toast(`Added ${plural(chosen.length, "item", "items")} from your photos`);
+    const today = todayIso();
+    update((st) => { for (const s of chosen) addItem(st, { uid: uid(), cat: s.cat, name: s.name, pack: s.pack, group: s.group, kind: s.kind, kcal: s.kcal, protein: s.protein, fibre: s.fibre, portions: s.portions, litres: s.litres, count: s.count, added: today, ...(s.bb ? { bb: s.bb } : {}) }); });
+    const dated = chosen.filter((s) => s.bb).length;
+    toast(`Added ${plural(chosen.length, "item", "items")} from your photos${dated ? `, ${dated} with dates` : ""}`);
     if (again) { setFiles([]); setScanned(null); setCompared(null); setMsg("Added. Photograph the next shelf or pile."); }
     else { closeSheet(); go("store"); }
   };
@@ -267,6 +270,10 @@ function ScanPane({ onMissing }: { onMissing: () => void }) {
                     <div className="row-main">
                       <input type="text" value={s.name} aria-label="Item name" onChange={(e) => edit(i, (x) => { x.name = e.target.value.slice(0, 80); })} />
                       <span className="s">{s.pack ? `${s.pack} · ` : ""}{GROUPS[s.group].label}{s.cat ? "" : " · estimate"} {s.conf === "low" ? <span className="conf low">check</span> : <span className={`conf ${s.conf}`}>{s.conf}</span>}</span>
+                      <label className="scan-bb">
+                        <span>Best before</span>
+                        <input type="date" value={s.bb || ""} aria-label={`Best-before date for ${s.name}`} onChange={(e) => { const v = e.target.value; edit(i, (x) => { if (isIsoDate(v)) x.bb = v; else delete x.bb; }); }} />
+                      </label>
                     </div>
                     <div className="stepper">
                       <button onClick={() => edit(i, (x) => { x.count = Math.max(1, x.count - 1); })} aria-label={`Fewer ${s.name}`}>−</button>
